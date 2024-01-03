@@ -4,7 +4,7 @@ import pickle
 import os.path
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from config import DATA_TO_PULL, SCOPES, SPREADSHEET_ID
+from api.config import DATA_TO_PULL, SCOPES, SPREADSHEET_ID
 
 
 def gsheet_api_check(SCOPES):
