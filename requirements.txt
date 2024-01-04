@@ -7,8 +7,9 @@ pydantic
 fastapi
 uvicorn
 icecream
-streamlit
-streamlit-folium
 gpxpy
 geopandas
+streamlit
+streamlit-folium
 streamlit-authenticator
+streamlit-extras
