@@ -1,34 +1,54 @@
 import streamlit as st
-import time
-import numpy as np
-
-st.set_page_config(page_title="coding", page_icon="💻")
+import streamlit_calendar
 
 
-st.markdown("# Plotting Demo")
-st.sidebar.header("Plotting Demo")
-st.write(
-    """This demo illustrates a combination of plotting and animation with
-Streamlit. We're generating a bunch of random numbers in a loop for around
-5 seconds. Enjoy!"""
-)
+def main():
+    st.set_page_config(page_title="coding", page_icon="💻")
+    calendar_options = {
+        "headerToolbar": {
+            "left": "today prev,next",
+            "center": "title",
+            "right": "resourceTimelineDay,resourceTimelineWeek,resourceTimelineMonth",
+        },
+        "slotMinTime": "06:00:00",
+        "slotMaxTime": "18:00:00",
+        "initialView": "resourceTimelineDay",
+        "resourceGroupField": "building",
+        "resources": [
+            {"id": "a", "building": "Building A", "title": "Building A"},
+            {"id": "b", "building": "Building A", "title": "Building B"},
+            {"id": "c", "building": "Building B", "title": "Building C"},
+            {"id": "d", "building": "Building B", "title": "Building D"},
+            {"id": "e", "building": "Building C", "title": "Building E"},
+            {"id": "f", "building": "Building C", "title": "Building F"},
+        ],
+    }
+    calendar_events = [
+        {
+            "title": "Event 1",
+            "start": "2023-07-31T08:30:00",
+            "end": "2023-07-31T10:30:00",
+            "resourceId": "a",
+        },
+        {
+            "title": "Event 2",
+            "start": "2023-07-31T07:30:00",
+            "end": "2023-07-31T10:30:00",
+            "resourceId": "b",
+        },
+        {
+            "title": "Event 3",
+            "start": "2023-07-31T10:40:00",
+            "end": "2023-07-31T12:30:00",
+            "resourceId": "a",
+        },
+    ]
 
-progress_bar = st.sidebar.progress(0)
-status_text = st.sidebar.empty()
-last_rows = np.random.randn(1, 1)
-chart = st.line_chart(last_rows)
+    calendar_st = streamlit_calendar.calendar(
+        events=calendar_events, options=calendar_options
+    )
+    st.write(calendar_st)
 
-for i in range(1, 101):
-    new_rows = last_rows[-1, :] + np.random.randn(5, 1).cumsum(axis=0)
-    status_text.text("%i%% Complete" % i)
-    chart.add_rows(new_rows)
-    progress_bar.progress(i)
-    last_rows = new_rows
-    time.sleep(0.05)
 
-progress_bar.empty()
-
-# Streamlit widgets automatically run the script from top to bottom. Since
-# this button is not connected to any other logic, it just causes a plain
-# rerun.
-st.button("Re-run")
+if __name__ == "__main__":
+    main()

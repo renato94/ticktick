@@ -2,7 +2,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
-from config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
+from api.config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
 from icecream import ic
 import httpx
 
@@ -62,7 +62,7 @@ class TickTickClient:
             "client_id": TICKTICK_CLIENT_ID,
             "scope": "tasks:write tasks:read",
             "state": state,
-            "redirect_uri": "http://localhost:8000/token",
+            "redirect_uri": "http://localhost:9090/token",
             "response_type": "code",
         }
         r = httpx.get(post_endpoint, params=parameters)
@@ -91,7 +91,7 @@ class TickTickClient:
             "code": self.code,
             "scope": "tasks:write tasks:read",
             "grant_type": "authorization_code",
-            "redirect_uri": "http://localhost:8000/token",
+            "redirect_uri": "http://localhost:9090/token",
         }
         r = httpx.post(post_endpoint, params=parameters)
         ic(r.status_code)
@@ -112,6 +112,20 @@ class TickTickClient:
             self.base_url + get_endpoint,
             headers={"Authorization": "Bearer " + self.access_token},
         )
-        ic(r.status_code)
-        ic(r.text)
         return r.json()
+
+    def get_projects_data(self):
+        projects = self.get_user_projects()
+        projects_ids = [p["id"] for p in projects]
+        tasks = []
+        for project_id in projects_ids:
+            get_endpoint = f"/open/v1/project/{project_id}/data"
+            r = httpx.get(
+                self.base_url + get_endpoint,
+                headers={"Authorization": "Bearer " + self.access_token},
+            )
+            tasks.append(r.json())
+        return tasks
+    
+    def get_task(self, project_id, task):
+        pass

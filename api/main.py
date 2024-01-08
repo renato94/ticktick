@@ -1,11 +1,11 @@
 from uuid import uuid4
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from icecream import ic
-from ticktick import TickTickClient
+from api.ticktick import TickTickClient
 
 state = uuid4()
 
-app = FastAPI(port=6000, debug=True)
+app = FastAPI(debug=True)
 
 
 @app.get("/authenticate")
@@ -24,10 +24,21 @@ def get_token(request: Request):
     return {"success": True}
 
 
-@app.get("/tasks")
+@app.get("/authenticated")
 def get_tasks():
-    tasks = app.state.ticktick_client.get_user_projects()
-    return tasks
+    if not app.state.ticktick_client.access_token:
+        raise HTTPException(401, "Not authenticated")
+    else:
+        return {"success": True}
+
+
+@app.get("/tasks")
+def get_project_data():
+    if not app.state.ticktick_client.access_token:
+        raise HTTPException(401, "Not authenticated")
+    else:
+        tasks = app.state.ticktick_client.get_projects_data()
+        return tasks
 
 
 @app.on_event("startup")
