@@ -3,9 +3,11 @@ import gpxpy
 import pandas as pd
 import geopandas as gpd
 import os
-import icecream as ic
 from dateutil.parser import parse
 from datetime import timedelta
+import httpx
+
+from config import BASE_API_URL
 
 base_gpx_path = "garmin-connect-export/2024-01-02_garmin_connect_export"
 activities_csv_path = base_gpx_path + "/activities.csv"
@@ -70,24 +72,21 @@ def get_execise_basic_view():
     st.write(meta_df)
 
 
+def update_activities():
+    r = httpx.get(BASE_API_URL + "garmin/activities/update", timeout=10)
+    r_json = r.json()
+    if r_json["success"] is True:
+        st.success("Update Garmin activities success")
+    else:
+        st.error("Update Garmin activities failed" + r_json["error"])
+
+
 def main():
     st.set_page_config(page_title="exercise", page_icon="🏃")
 
-    gpx_paths = [
-        os.path.join(base_gpx_path, p)
-        for p in os.listdir(base_gpx_path)
-        if p.endswith(".gpx")
-    ]
-    selected_option = st.selectbox("Select an option:", gpx_paths)
+    st.button("Refresh", on_click=update_activities)
 
-    st.write(f"You selected: {selected_option}")
-
-    # Read data from a GPX file
-    data = gpx_to_geopandas(selected_option)
-    # Display a map with the latitude and longitude values
-    st.map(data, size=2, color="#0044ff")
-    activities_df = pd.read_csv(activities_csv_path)
-    st.write(activities_df)
+   
 
 
 if __name__ == "__main__":

@@ -5,6 +5,9 @@ from datetime import datetime
 from api.config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
 from icecream import ic
 import httpx
+from fastapi import APIRouter, HTTPException, Request
+
+router = APIRouter(prefix="/ticktick", tags=["ticktick"])
 
 
 class Subtask(BaseModel):
@@ -126,6 +129,39 @@ class TickTickClient:
             )
             tasks.append(r.json())
         return tasks
-    
+
     def get_task(self, project_id, task):
         pass
+
+
+@router.get("/authenticate")
+def get_redirect_url(request: Request):
+    redirect_url = request.app.state.ticktick_client.get_redirect_url(state)
+    ic(redirect_url)
+    return {"success": True, "redirect_url": redirect_url}
+
+
+@router.get("/token")
+def get_token(request: Request):
+    code = request.query_params.get("code")
+    request.app.state.ticktick_client.set_code(code)
+    access_token = request.app.state.ticktick_client.get_access_token()
+    request.app.state.ticktick_client.set_access_token(access_token["access_token"])
+    return {"success": True}
+
+
+@router.get("/authenticated")
+def get_tasks(request: Request):
+    if not request.app.state.ticktick_client.access_token:
+        raise HTTPException(401, "Not authenticated")
+    else:
+        return {"success": True}
+
+
+@router.get("/tasks")
+def get_project_data(request: Request):
+    if not request.app.state.ticktick_client.access_token:
+        raise HTTPException(401, "Not authenticated")
+    else:
+        tasks = request.app.state.ticktick_client.get_projects_data()
+        return tasks
