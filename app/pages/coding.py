@@ -1,9 +1,23 @@
+import httpx
 import streamlit as st
 import streamlit_calendar
+
+from config import BASE_API_URL
+
+
+def get_github_repos():
+    r = httpx.get(BASE_API_URL + "github/repos", timeout=10)
+    return r.json()
 
 
 def main():
     st.set_page_config(page_title="coding", page_icon="💻")
+    repos = get_github_repos()
+
+    st.metric("Repositories", len(repos))
+    st.metric("Commits", sum([r["n_commits"] for r in repos]))
+    st.write(repos)
+
     calendar_options = {
         "headerToolbar": {
             "left": "today prev,next",

@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Request
 from icecream import ic
 from api.ticktick import TickTickClient, router as ticktick_router
 from api.garmin import router as garmin_router
+from api.github_api import router as github_router
 
 state = uuid4()
 
@@ -10,6 +11,7 @@ app = FastAPI(debug=True)
 
 app.include_router(garmin_router)
 app.include_router(ticktick_router)
+app.include_router(github_router)
 
 
 @app.on_event("startup")
