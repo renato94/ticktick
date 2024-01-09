@@ -1,22 +1,24 @@
 import httpx
 import streamlit as st
 import streamlit_calendar
-
+from icecream import ic
 from config import BASE_API_URL
 
 
 def get_github_repos():
-    r = httpx.get(BASE_API_URL + "github/repos", timeout=10)
+    r_repos = httpx.get(BASE_API_URL + "github/repos")
+    n_repos = r_repos.json()["n_repos"]
+    st.metric("Repositories", n_repos)
+    timeout = 5 * n_repos
+    with st.spinner("waiting"):
+        r = httpx.get(BASE_API_URL + "github/repos/all", timeout=timeout)
     return r.json()
 
 
 def main():
     st.set_page_config(page_title="coding", page_icon="💻")
     repos = get_github_repos()
-
-    st.metric("Repositories", len(repos))
-    st.metric("Commits", sum([r["n_commits"] for r in repos]))
-    st.write(repos)
+    st.table(repos)
 
     calendar_options = {
         "headerToolbar": {
