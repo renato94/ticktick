@@ -1,6 +1,8 @@
+from pathlib import Path
 import subprocess
 import os
 from fastapi import APIRouter
+import gpxpy
 from icecream import ic
 import csv
 from api.config import (
@@ -9,8 +11,28 @@ from api.config import (
     GARMIN_EXPORT_PATH,
     GARMIN_ROOT_PROJECT,
 )
+import pandas as pd
+import geopandas as gpd
 
 router = APIRouter(prefix="/garmin", tags=["garmin"])
+
+
+def gpx_to_geopandas(gpx_file_path):
+    gpx_file = open(gpx_file_path, "r")
+    gpx = gpxpy.parse(gpx_file)
+
+    data = []
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for point in segment.points:
+                data.append([point.latitude, point.longitude])
+
+    df = pd.DataFrame(data, columns=["Latitude", "Longitude"])
+    df.rename(columns={"Latitude": "latitude", "Longitude": "longitude"}, inplace=True)
+    # Convert DataFrame to GeoDataFrame
+    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude))
+
+    return gdf
 
 
 @router.get("/activities/update")
@@ -64,3 +86,11 @@ def get_activities():
             activity_json[column] = activity[i_column]
         activities_json.append(activity_json)
     return activities_json
+
+
+@router.get("/activities/{activity_id}")
+def get_activity(activity_id):
+    file_path = Path(GARMIN_EXPORT_PATH) / f"activity_{activity_id}.gpx"
+    ic(file_path)
+    activity_df = gpx_to_geopandas(file_path)
+    return activity_df.to_json()

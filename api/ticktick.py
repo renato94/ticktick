@@ -48,7 +48,7 @@ class TickTickClient:
     def set_code(self, code: str):
         self.code = code
 
-    def get_redirect_url(self, state):
+    def get_redirect_url(self, state=None):
         """
         Get the access token.
 
@@ -58,14 +58,15 @@ class TickTickClient:
         Returns:
             dict: Access token information.
         """
-
+        if not state:
+            state = str(uuid4())
         post_endpoint = "https://ticktick.com/oauth/authorize"
         # Make the API call to retrieve the access token
         parameters = {
             "client_id": TICKTICK_CLIENT_ID,
             "scope": "tasks:write tasks:read",
             "state": state,
-            "redirect_uri": "http://localhost:9090/token",
+            "redirect_uri": "http://localhost:9090/ticktick/token",
             "response_type": "code",
         }
         r = httpx.get(post_endpoint, params=parameters)
@@ -94,7 +95,7 @@ class TickTickClient:
             "code": self.code,
             "scope": "tasks:write tasks:read",
             "grant_type": "authorization_code",
-            "redirect_uri": "http://localhost:9090/token",
+            "redirect_uri": "http://localhost:9090/ticktick/token",
         }
         r = httpx.post(post_endpoint, params=parameters)
         ic(r.status_code)
@@ -130,13 +131,10 @@ class TickTickClient:
             tasks.append(r.json())
         return tasks
 
-    def get_task(self, project_id, task):
-        pass
-
 
 @router.get("/authenticate")
 def get_redirect_url(request: Request):
-    redirect_url = request.app.state.ticktick_client.get_redirect_url(state)
+    redirect_url = request.app.state.ticktick_client.get_redirect_url()
     ic(redirect_url)
     return {"success": True, "redirect_url": redirect_url}
 
