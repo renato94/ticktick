@@ -15,3 +15,4 @@ streamlit-authenticator
 streamlit-extras
 streamlit-calendar
 PyGithub
+plotly
