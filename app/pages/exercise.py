@@ -81,6 +81,13 @@ def get_meta_activities(year, act_df, activity_type):
     }
 
 
+def try_division(x, y, val=0.0):
+    try:
+        return x / y
+    except ZeroDivisionError:
+        return val
+
+
 def get_agregated_activities(activities_df):
     unique_activities = activities_df["Activity Type"].unique()
 
@@ -96,20 +103,66 @@ def get_agregated_activities(activities_df):
 
     # Group by month and count the number of activities
     act_df["Date"] = pd.to_datetime(act_df["Start Time"])
-    act_df["Number of activities"] = act_df.groupby("Month")["Activity Type"].transform(
-        "count"
-    )
 
-    # Sum the remaining columns
-    act_df = act_df.groupby("Month").sum(numeric_only=True).reset_index()
-    st.write(
-        alt.Chart(act_df)
+    monthly_dict = {
+        month: {
+            "Number of activities": 0,
+            "Calories": 0,
+            "Sum Heart Rate": 0,
+            "Duration": 0,
+            "Distance": 0,
+        }
+        for month in range(1, 13)
+    }
+
+    for _, row in act_df.iterrows():
+        monthly_dict[row["Month"]]["Number of activities"] += 1
+        monthly_dict[row["Month"]]["Calories"] += row["Calories"]
+        monthly_dict[row["Month"]]["Sum Heart Rate"] += row["Average Heart Rate (bpm)"]
+        monthly_dict[row["Month"]]["Duration"] += row["Duration seconds"]
+        monthly_dict[row["Month"]]["Distance"] += row["Distance"]
+
+    for month in monthly_dict.keys():
+        monthly_dict[month]["Average Heart Rate"] = try_division(
+            monthly_dict[month]["Sum Heart Rate"],
+            monthly_dict[month]["Number of activities"],
+        )
+        monthly_dict[month]["Average Calories"] = try_division(
+            monthly_dict[month]["Calories"], monthly_dict[month]["Number of activities"]
+        )
+        monthly_dict[month]["Average Duration"] = str(
+            timedelta(
+                seconds=int(
+                    try_division(
+                        monthly_dict[month]["Duration"],
+                        monthly_dict[month]["Number of activities"],
+                    )
+                )
+            )
+        )
+        monthly_dict[month]["Average Distance"] = try_division(
+            monthly_dict[month]["Distance"], monthly_dict[month]["Number of activities"]
+        )
+        monthly_dict[month]["Month"] = calendar.month_name[month]
+
+    monthly_df = pd.DataFrame(monthly_dict.values())
+    monthly_df["Duration"] = monthly_df["Duration"].apply(
+        lambda x: str(timedelta(seconds=int(x)))
+    )
+    st.altair_chart(
+        alt.Chart(monthly_df)
         .mark_bar()
         .encode(
-            x="Month:O",
+            x=alt.X("Month", sort=None),
             y="Number of activities",
-            tooltip=["Month", "Number of activities"],
-        )
+            tooltip=[
+                "Duration",
+                "Average Duration",
+                "Average Heart Rate",
+                "Average Calories",
+            ],
+        ),
+        use_container_width=True,
     )
 
     st.write(activity_option)
