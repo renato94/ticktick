@@ -230,17 +230,24 @@ def main():
         st.write(activities_df)
         get_agregated_activities(activities_df)
 
-        activities_ids = activities_df["Activity ID"].unique()
-        activity = st.selectbox("Select activity", activities_ids)
-        activity = get_single_activity(activity)
-        activity_df = gpd.GeoDataFrame(activity["features"])
-        activity_df["latitude"] = activity_df["geometry"].apply(
-            lambda x: x["coordinates"][1]
-        )
-        activity_df["longitude"] = activity_df["geometry"].apply(
-            lambda x: x["coordinates"][0]
-        )
-        st.map(activity_df, size=1)
+        activity_options = {
+            f'{a["Activity Type"]} - {a["Start Time"]}': a["Activity ID"]
+            for _, a in activities_df.iterrows()
+        }
+        activity = st.selectbox("Select activity", activity_options.keys())
+        activity_id = activity_options[activity]
+        activity = get_single_activity(activity_id)
+        try:
+            activity_df = gpd.GeoDataFrame(activity["features"])
+            activity_df["latitude"] = activity_df["geometry"].apply(
+                lambda x: x["coordinates"][1]
+            )
+            activity_df["longitude"] = activity_df["geometry"].apply(
+                lambda x: x["coordinates"][0]
+            )
+            st.map(activity_df, size=1)
+        except Exception:
+            st.error("Cannot display activity GPS data")
 
 
 if __name__ == "__main__":
