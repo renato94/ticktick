@@ -10,6 +10,8 @@ from datetime import timedelta
 import httpx
 from icecream import ic
 from config import BASE_API_URL
+import calendar
+import altair as alt
 
 base_gpx_path = "garmin-connect-export/2024-01-02_garmin_connect_export"
 activities_csv_path = base_gpx_path + "/activities.csv"
@@ -86,35 +88,32 @@ def get_agregated_activities(activities_df):
     year_option = st.selectbox("select year", years)
     activity_option = st.selectbox(label="activity option", options=unique_activities)
     activities_meta = []
-
     act_df = activities_df[activities_df["Activity Type"] == activity_option]
-
-    ic(len(act_df))
     act_df = act_df[act_df["Year"] == year_option]
-    ic(len(act_df))
+
     activities_meta.append(get_meta_activities(year_option, act_df, activity_option))
     meta_df = pd.DataFrame(activities_meta)
+
+    # Group by month and count the number of activities
+    act_df["Date"] = pd.to_datetime(act_df["Start Time"])
+    act_df["Number of activities"] = act_df.groupby("Month")["Activity Type"].transform(
+        "count"
+    )
+
+    # Sum the remaining columns
+    act_df = act_df.groupby("Month").sum(numeric_only=True).reset_index()
+    st.write(
+        alt.Chart(act_df)
+        .mark_bar()
+        .encode(
+            x="Month:O",
+            y="Number of activities",
+            tooltip=["Month", "Number of activities"],
+        )
+    )
+
     st.write(activity_option)
     st.write(meta_df)
-    st.scatter_chart(
-        act_df,
-        x="Duration seconds",
-        y=["Calories", "Average Heart Rate (bpm)", "Max. Heart Rate (bpm)"],
-        size="Distance",
-    )
-
-    # Monthly activities by columns
-
-    # plot monthly activities
-    sum_month_df = act_df.groupby("Month").sum()
-    ic(sum_month_df.columns)
-    ic(len(sum_month_df))
-
-    st.bar_chart(
-        act_df,
-        x="Month",
-        y=["Distance"],
-    )
 
 
 def update_activities():
@@ -155,13 +154,16 @@ def main():
             lambda x: parse(x).year
         )
         activities_df["Month"] = activities_df["Start Time"].apply(
-            lambda x: calendar.month_name[parse(x).month]
+            lambda x: parse(x).month
         )
 
         activities_df["Distance"] = activities_df["Distance (km)"].apply(to_float)
-
+        activities_df["Calories"] = activities_df["Calories"].apply(to_float)
         activities_df = activities_df.astype(
-            {"Average Heart Rate (bpm)": int, "Max. Heart Rate (bpm)": int}
+            {
+                "Average Heart Rate (bpm)": int,
+                "Max. Heart Rate (bpm)": int,
+            }
         )
         activities_df["Duration seconds"] = activities_df["Duration (h:m:s)"].apply(
             time_to_seconds

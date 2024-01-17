@@ -1,8 +1,9 @@
 import httpx
 import streamlit as st
 import streamlit_calendar
-from icecream import ic
 from config import BASE_API_URL
+
+repos = None
 
 
 def get_github_repos():
@@ -17,8 +18,10 @@ def get_github_repos():
 
 def main():
     st.set_page_config(page_title="coding", page_icon="💻")
-    repos = get_github_repos()
-    st.table(repos)
+    if "repos" not in st.session_state:
+        repos = get_github_repos()
+        st.session_state["repos"] = repos
+    st.table(st.session_state["repos"])
 
     calendar_options = {
         "headerToolbar": {
