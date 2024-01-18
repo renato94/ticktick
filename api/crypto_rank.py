@@ -9,27 +9,36 @@ import pandas as pd
 router = APIRouter(prefix="/crypto-rank", tags=["crypto-rank"])
 
 
-@router.get("/initial_values")
+@router.get("/all")
 def get_crypto_entries(request: Request):
     # Read entries from google sheets
-    data = pull_sheet_data(SCOPES, SPREADSHEET_CRYPTO_ID, "entries")
-    columns = data[0]
-    entries = data[1:]
-    data_df = pd.DataFrame(entries, columns=columns)
-    ic(columns)
-    ids = data_df["crypto rank id"].tolist()
-    r_crypto_rank = request.app.state.crypto_rank_client.get_symbols_by_ids(ids=ids)
-    for symbol_data in r_crypto_rank:
-        ic(symbol_data)
+    data_df = pull_sheet_data(SCOPES, SPREADSHEET_CRYPTO_ID, "entries")
+    data_df["invested value"] = data_df["invested value"].astype(float)
 
+    crypto_dict = data_df.set_index("crypto rank id").to_dict(orient="index")
+    r_crypto_rank = request.app.state.crypto_rank_client.get_symbols_by_ids(
+        list(crypto_dict.keys())
+    )
 
-    return data_df.to_json()
+    for crypto in r_crypto_rank["data"]:
+        c_id = str(crypto["id"])
+        crypto_dict[c_id]["price"] = crypto["values"]["USD"]["price"]
+        crypto_dict[c_id]["current investment value"] = float(
+            crypto["values"]["USD"]["price"]
+        ) * float(crypto_dict[c_id]["n_tokens"])
+        crypto_dict[c_id]["percent change"] = round(
+            (
+                (
+                    float(crypto_dict[c_id]["current investment value"])
+                    - float(crypto_dict[c_id]["invested value"])
+                )
+                / float(crypto_dict[c_id]["invested value"])
+            )
+            * 100,
+            2,
+        )
 
-
-@router.get("/tickers")
-def get_cryptos(request: Request):
-    symbols = []
-    return request.app.state.crypto_rank_client.get_tickets(symbols)
+    return crypto_dict
 
 
 class CryptoRankClient:
@@ -42,7 +51,6 @@ class CryptoRankClient:
                 "state": "active",
             },
         )
-        ic(r.json())
         return r.json()
 
     def get_symbols_by_ids(self, ids):

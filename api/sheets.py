@@ -1,11 +1,10 @@
 from googleapiclient.discovery import build
-import pandas as pd
 import pickle
 import os.path
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from api.config import DATA_TO_PULL, SCOPES, SPREADSHEET_ID
 from icecream import ic
+import pandas as pd
 
 
 def gsheet_api_check(SCOPES):
@@ -18,16 +17,14 @@ def gsheet_api_check(SCOPES):
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json",
-                SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
         with open("token.pickle", "wb") as token:
             pickle.dump(creds, token)
     return creds
 
 
-def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL):
+def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL) -> pd.DataFrame:
     creds = gsheet_api_check(SCOPES)
     service = build("sheets", "v4", credentials=creds)
     sheet = service.spreadsheets()
@@ -38,6 +35,7 @@ def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL):
 
     if not values:
         print("No data found.")
+        return pd.DataFrame()
     else:
         rows = (
             sheet.values()
@@ -46,5 +44,9 @@ def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL):
         )
         data = rows.get("values")
         print("COMPLETE: Data copied")
-        return data
-
+        columns = data[0]
+        entries = data[1:]
+        for entry in entries:
+            remaining_cols = len(columns) - len(entry)
+            entry.extend([""] * remaining_cols)
+        return pd.DataFrame(entries, columns=columns)
