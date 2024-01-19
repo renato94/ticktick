@@ -13,7 +13,6 @@ from api.config import (
 )
 import pandas as pd
 import geopandas as gpd
-import json
 
 router = APIRouter(prefix="/garmin", tags=["garmin"])
 
@@ -76,7 +75,6 @@ def get_activities():
         for i_row, row in enumerate(reader):
             if i_row == 0:
                 # Skip the header row
-                ic(row)
                 columns = row
                 continue
             activities.append(row)
@@ -86,13 +84,6 @@ def get_activities():
         for i_column, column in enumerate(columns):
             activity_json[column] = activity[i_column]
         activities_json[activity_json["Activity ID"]] = activity_json
-    # # Read json activities
-    # json_file_paths = os.listdir(GARMIN_EXPORT_PATH)
-    # json_file_paths = [
-    #     os.path.join(GARMIN_EXPORT_PATH, p)
-    #     for p in json_file_paths
-    #     if p.endswith(".json") and p.startswith("activities")
-    # ]
 
     return activities_json
 
@@ -100,6 +91,5 @@ def get_activities():
 @router.get("/activities/{activity_id}")
 def get_activity(activity_id):
     file_path = Path(GARMIN_EXPORT_PATH) / f"activity_{activity_id}.gpx"
-    ic(file_path)
     activity_df = gpx_to_geopandas(file_path)
     return activity_df.to_json()

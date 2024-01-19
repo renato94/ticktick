@@ -4,9 +4,15 @@ from api.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
 from fastapi import APIRouter, Request
 from api.config import SCOPES, SPREADSHEET_CRYPTO_ID
 from api.sheets import pull_sheet_data
-import pandas as pd
 
 router = APIRouter(prefix="/crypto-rank", tags=["crypto-rank"])
+
+
+def calculate_average_entry(initial_investment, num_tokens):
+    if num_tokens == 0:
+        return 0
+    average_entry = initial_investment / num_tokens
+    return average_entry
 
 
 @router.get("/all")
@@ -14,6 +20,7 @@ def get_crypto_entries(request: Request):
     # Read entries from google sheets
     data_df = pull_sheet_data(SCOPES, SPREADSHEET_CRYPTO_ID, "entries")
     data_df["invested value"] = data_df["invested value"].astype(float)
+    data_df["n_tokens"] = data_df["n_tokens"].astype(float)
 
     crypto_dict = data_df.set_index("crypto rank id").to_dict(orient="index")
     r_crypto_rank = request.app.state.crypto_rank_client.get_symbols_by_ids(
@@ -25,7 +32,7 @@ def get_crypto_entries(request: Request):
         crypto_dict[c_id]["price"] = crypto["values"]["USD"]["price"]
         crypto_dict[c_id]["current investment value"] = float(
             crypto["values"]["USD"]["price"]
-        ) * float(crypto_dict[c_id]["n_tokens"])
+        ) * crypto_dict[c_id]["n_tokens"]
         crypto_dict[c_id]["percent change"] = round(
             (
                 (
@@ -37,8 +44,18 @@ def get_crypto_entries(request: Request):
             * 100,
             2,
         )
+        crypto_dict[c_id]["average entry"] = calculate_average_entry(
+            crypto_dict[c_id]["invested value"], crypto_dict[c_id]["n_tokens"]
+        )
 
     return crypto_dict
+
+
+@router.get("/single/{crypto_symbol}")
+def get_single_crypto(crypto_symbol: str, request: Request):
+    r_crypto_rank = request.app.state.crypto_rank_client.get_symbols([crypto_symbol])
+    ic(r_crypto_rank)
+    return r_crypto_rank
 
 
 class CryptoRankClient:

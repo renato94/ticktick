@@ -5,7 +5,7 @@ from datetime import datetime
 from api.config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
 from icecream import ic
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 
 router = APIRouter(prefix="/ticktick", tags=["ticktick"])
 
@@ -132,6 +132,15 @@ class TickTickClient:
         return tasks
 
 
+def verify_access_token(request: Request):
+    if not request.app.state.ticktick_client.access_token:
+        raise HTTPException(status_code=401, detail="Please authenticate first")
+
+
+def get_ticktick_client(request: Request):
+    return request.app.state.ticktick_client
+
+
 @router.get("/authenticate")
 def get_redirect_url(request: Request):
     redirect_url = request.app.state.ticktick_client.get_redirect_url()
@@ -148,18 +157,14 @@ def get_token(request: Request):
     return {"success": True}
 
 
-@router.get("/authenticated")
-def get_tasks(request: Request):
-    if not request.app.state.ticktick_client.access_token:
-        raise HTTPException(401, "Not authenticated")
-    else:
-        return {"success": True}
+@router.get("/authenticated", dependencies=[Depends(verify_access_token)])
+def get_is_authenticated(request: Request):
+    return {"success": True}
 
 
-@router.get("/tasks")
-def get_project_data(request: Request):
-    if not request.app.state.ticktick_client.access_token:
-        raise HTTPException(401, "Not authenticated")
-    else:
-        tasks = request.app.state.ticktick_client.get_projects_data()
-        return tasks
+@router.get("/tasks", dependencies=[Depends(verify_access_token)])
+def get_project_data(
+    request: Request, ticktick_client: TickTickClient = Depends(get_ticktick_client)
+):
+    tasks = ticktick_client.get_projects_data()
+    return tasks
