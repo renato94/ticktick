@@ -14,5 +14,6 @@ streamlit-folium
 streamlit-authenticator
 streamlit-extras
 streamlit-calendar
+streamlit-card
 PyGithub
 plotly

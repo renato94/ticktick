@@ -1,27 +1,33 @@
 import httpx
 import streamlit as st
 import streamlit_calendar
+from streamlit_card import card
 from config import BASE_API_URL
 
 repos = None
 
 
-def get_github_repos():
-    r_repos = httpx.get(BASE_API_URL + "github/repos")
-    n_repos = r_repos.json()["n_repos"]
-    st.metric("Repositories", n_repos)
-    timeout = 5 * n_repos
-    with st.spinner("waiting"):
-        r = httpx.get(BASE_API_URL + "github/repos/all", timeout=timeout)
+def get_github_user():
+    r = httpx.get(BASE_API_URL + "github/user")
     return r.json()
 
 
+def get_github_repos():
+    r_repos = httpx.get(BASE_API_URL + "github/repos")
+    return r_repos.json()
+
 def main():
     st.set_page_config(page_title="coding", page_icon="💻")
-    if "repos" not in st.session_state:
-        repos = get_github_repos()
-        st.session_state["repos"] = repos
-    st.table(st.session_state["repos"])
+    user = get_github_user()
+    card(
+        title=user["name"],
+        text=user["bio"],
+        image=user["avatar_url"],
+        url=user["html_url"],
+    )
+    repos = get_github_repos()
+    st.write(repos)
+
 
     calendar_options = {
         "headerToolbar": {
