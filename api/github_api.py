@@ -38,6 +38,7 @@ class GitHubClient:
                 "name": c.commit.author.name,
                 "date": c.commit.author.date,
                 "message": c.commit.message,
+                "size": c.stats.total,
             }
             for c in commits
         ]

@@ -30,14 +30,18 @@ def get_crypto_entries(request: Request):
     for crypto in r_crypto_rank["data"]:
         c_id = str(crypto["id"])
         crypto_dict[c_id]["price"] = crypto["values"]["USD"]["price"]
-        crypto_dict[c_id]["current investment value"] = float(
-            crypto["values"]["USD"]["price"]
-        ) * crypto_dict[c_id]["n_tokens"]
-        crypto_dict[c_id]["percent change"] = round(
+        crypto_dict[c_id]["current investment value"] = (
+            float(crypto["values"]["USD"]["price"]) * crypto_dict[c_id]["n_tokens"]
+        )
+        crypto_dict[c_id]["profit"] = (
+            float(crypto_dict[c_id]["current investment value"])
+            - crypto_dict[c_id]["invested value"]
+        )
+        crypto_dict[c_id]["profit %"] = round(
             (
                 (
                     float(crypto_dict[c_id]["current investment value"])
-                    - float(crypto_dict[c_id]["invested value"])
+                    - crypto_dict[c_id]["invested value"]
                 )
                 / float(crypto_dict[c_id]["invested value"])
             )

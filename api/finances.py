@@ -14,7 +14,6 @@ def get_subscriptions():
     data_df = pull_sheet_data(SCOPES, SPREADSHEET_FINANCES_ID, "subscriptions")
     data_df["Total Value"] = data_df["Total Value"].astype(float)
     data_df["Solo Value"] = data_df["Solo Value"].astype(float)
-
     return data_df.to_dict(orient="records")
 
 
@@ -33,3 +32,4 @@ def get_current_finances():
     data_df = pull_sheet_data(SCOPES, SPREADSHEET_FINANCES_ID, current_month)
     data_df["Total"] = data_df["Total"].astype(float)
     return data_df.to_dict(orient="records")
+

@@ -77,16 +77,7 @@ class TickTickClient:
         return redirect_url
 
     def get_access_token(self):
-        """
-        Get the access token.
-
-        Args:
-            authorization_token (str): Authorization token.
-
-        Returns:
-            dict: Access token information.
-        """
-
+      
         post_endpoint = "https://ticktick.com/oauth/token"
         # Make the API call to retrieve the access token
         parameters = {
