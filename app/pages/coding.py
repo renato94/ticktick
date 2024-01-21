@@ -1,3 +1,4 @@
+from datetime import datetime
 import httpx
 import streamlit as st
 from streamlit_card import card
@@ -6,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from dateutil import parser
 import calendar
+import numpy as np
 
 repos = None
 
@@ -46,12 +48,54 @@ def get_github_repos():
     return r_repos.json()
 
 
+def plot_current_month_commits(commits_df, current_month):
+
+    # Get the number of weeks in the current month
+    num_weeks = np.ceil(commits_df["date"].dt.day.max() / 7)
+
+    # Create a list of weekdays
+    weekdays = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    # Create a matrix to store the number of commits per weekday and week
+    commits_matrix = np.zeros((int(num_weeks), 7))
+
+    # Fill the matrix with the number of commits
+    for _, commit in commits_df.iterrows():
+        week = int((commit["date"].day - 1) / 7)
+        weekday = commit["date"].weekday()
+        commits_matrix[week][weekday] += 1
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=commits_matrix,
+            x=weekdays,
+            y=list(range(1, int(num_weeks) + 1)),
+            colorscale="thermal",
+        ),
+        layout=go.Layout(
+            title=f"{calendar.month_name[current_month]} commits",
+            xaxis_title="Weekday",
+            yaxis_title="Week",
+        ),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 def main():
     st.set_page_config(page_title="coding", page_icon="💻", layout="wide")
     user = get_github_user()
     col1, col2 = st.columns([1, 1])
 
     with col1:
+        st.header("Github profile")
         card(
             title=user["name"],
             text=user["bio"],
@@ -83,14 +127,17 @@ def main():
     )
     months = list(range(1, 13))
 
-    year_option = st.selectbox("Year", all_years)
-    month_option = st.selectbox("Month", months)
+    year_option = st.selectbox("Year", all_years, index=len(all_years) - 1)
+    month_option = st.selectbox(
+        "Month", months, index=months.index(datetime.now().month)
+    )
 
     commits_df["date"] = pd.to_datetime(commits_df["date"])
     filtered_commits = commits_df[commits_df["date"].dt.year == year_option]
     filtered_commits = filtered_commits[
         filtered_commits["date"].dt.month == month_option
     ]
+    plot_current_month_commits(filtered_commits)
     st.dataframe(filtered_commits, use_container_width=True)
 
     commits_per_month = (
@@ -98,6 +145,7 @@ def main():
         .size()
         .unstack(fill_value=0)
     )
+
     fig = go.Figure(
         data=go.Heatmap(
             z=commits_per_month.values,

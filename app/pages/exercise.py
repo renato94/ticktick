@@ -31,7 +31,7 @@ def gpx_to_geopandas(gpx_file_path):
     df.rename(columns={"Latitude": "latitude", "Longitude": "longitude"}, inplace=True)
     # Convert DataFrame to GeoDataFrame
     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude))
-
+    
     return gdf
 
 
