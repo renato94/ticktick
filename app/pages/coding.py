@@ -137,7 +137,7 @@ def main():
     filtered_commits = filtered_commits[
         filtered_commits["date"].dt.month == month_option
     ]
-    plot_current_month_commits(filtered_commits)
+    plot_current_month_commits(filtered_commits, current_month= month_option)
     st.dataframe(filtered_commits, use_container_width=True)
 
     commits_per_month = (

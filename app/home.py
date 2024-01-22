@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_extras.switch_page_button import switch_page
-from pages.exercise import get_execise_basic_view
 import httpx
 from datetime import datetime
 
@@ -18,7 +17,6 @@ def main():
     get_title()
 
     exercise_btn = st.button("➤ Exercise")
-    get_execise_basic_view()
     if exercise_btn:
         switch_page("exercise")
     st.divider()

@@ -17,3 +17,5 @@ streamlit-calendar
 streamlit-card
 PyGithub
 plotly
+pyotp
+qrcode

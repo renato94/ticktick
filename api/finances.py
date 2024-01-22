@@ -4,9 +4,9 @@ import calendar
 from api.config import SCOPES, SPREADSHEET_FINANCES_ID
 import pandas as pd
 from datetime import datetime
-from icecream import ic
 
 router = APIRouter(prefix="/finances", tags=["finances"])
+
 
 
 @router.get("/subscriptions")

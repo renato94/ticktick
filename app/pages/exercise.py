@@ -214,8 +214,17 @@ def get_single_activity(activity):
     return activity_json
 
 
+def verify_code(code):
+    r = httpx.get(BASE_API_URL + f"verify/{code}", timeout=10)
+    r_json = r.json()
+    return r_json
 def main():
     st.set_page_config(page_title="exercise", page_icon="🏃")
+
+    if not st.session_state.get('token'):
+        st.info("Please authenticate")
+        code =  st.number_input("Enter token", key='token')
+        if code:
 
     st.button("Refresh", on_click=update_activities)
 
