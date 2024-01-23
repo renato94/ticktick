@@ -45,27 +45,24 @@ def main():
     with st.spinner("Loading expenses..."):
         current_expenses_data = get_current_expenses_data()
         subscriptions_data = get_subscriptions()
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.header(f"{calendar.month_name[datetime.now().month]} Expenses")
 
-            current_expenses_df = pd.DataFrame(current_expenses_data)
-            total_monthly_expenses = current_expenses_df["Total"].sum()
-            st.subheader(f"Total: €{total_monthly_expenses}")
-            st.subheader("Total")
-            with st.expander("Expand", expanded=False):
-                st.dataframe(current_expenses_df)
-        with col2:
-            st.header("Subscriptions")
-            subscriptions_df = pd.DataFrame(subscriptions_data)
-            monthly_subscriptions = subscriptions_df[
-                subscriptions_df["Billing period"] == "monthly"
-            ]
-            total_monthly_subscriptions = monthly_subscriptions["Solo Value"].sum()
-            st.subheader(f"Total: €{total_monthly_subscriptions}")
-            st.subheader("Total")
-            with st.expander("Expand", expanded=False):
-                st.dataframe(subscriptions_df)
+        st.header(f"{calendar.month_name[datetime.now().month]} Expenses")
+
+        current_expenses_df = pd.DataFrame(current_expenses_data)
+        total_monthly_expenses = current_expenses_df["Total"].sum()
+        st.subheader(f"Total: €{total_monthly_expenses}")
+        st.bar_chart(current_expenses_df[["Date", "Total"]].set_index("Date"))
+        with st.expander("Expand", expanded=False):
+            st.dataframe(current_expenses_df)
+        subscriptions_df = pd.DataFrame(subscriptions_data)
+        monthly_subscriptions = subscriptions_df[
+            subscriptions_df["Billing period"] == "monthly"
+        ]
+        st.header("Subscriptions")
+        total_monthly_subscriptions = monthly_subscriptions["Solo Value"].sum()
+        st.subheader(f"Total: €{total_monthly_subscriptions}")
+        with st.expander("Expand", expanded=False):
+            st.dataframe(subscriptions_df)
     st.header("Crypto")
     with st.spinner("Loading crypto..."):
         crypto_data = get_crypto_data()
@@ -93,7 +90,22 @@ def main():
                 },
                 index=[0],
             )
-            st.dataframe(totals_df.style.apply(profit, axis=1))
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                st.metric(
+                    "Total invested value", f"€{totals_df['invested value'].values[0]}"
+                )
+
+            with col2:
+                st.metric(
+                    "Total current investment value",
+                    f"€{round(totals_df['current investment value'].values[0], 2)}",
+                )
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                st.metric("Total profit", f"€{totals_df['profit'].values[0]}")
+            with col2:
+                st.metric("Total profit %", f"{totals_df['profit %'].values[0]}%")
             st.dataframe(crypto_df.style.apply(profit, axis=1))
 
 

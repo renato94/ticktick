@@ -1,7 +1,7 @@
 from pathlib import Path
 import subprocess
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 import gpxpy
 from icecream import ic
 import csv
@@ -13,6 +13,8 @@ from api.config import (
 )
 import pandas as pd
 import geopandas as gpd
+
+from api import verify_token
 
 router = APIRouter(prefix="/garmin", tags=["garmin"])
 

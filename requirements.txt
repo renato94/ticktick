@@ -15,6 +15,7 @@ streamlit-authenticator
 streamlit-extras
 streamlit-calendar
 streamlit-card
+streamlit-local-storage
 PyGithub
 plotly
 pyotp

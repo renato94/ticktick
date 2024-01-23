@@ -6,7 +6,7 @@ import geopandas as gpd
 import os
 import calendar
 from dateutil.parser import parse
-from datetime import timedelta
+from datetime import datetime, timedelta
 import httpx
 from icecream import ic
 from config import BASE_API_URL
@@ -31,7 +31,7 @@ def gpx_to_geopandas(gpx_file_path):
     df.rename(columns={"Latitude": "latitude", "Longitude": "longitude"}, inplace=True)
     # Convert DataFrame to GeoDataFrame
     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitude, df.latitude))
-    
+
     return gdf
 
 
@@ -87,11 +87,12 @@ def try_division(x, y, val=0.0):
     except ZeroDivisionError:
         return val
 
+
 def show_activities(activities_df):
     activity_options = {
-            f'{a["Activity Type"]} - {a["Start Time"]}': a["Activity ID"]
-            for _, a in activities_df.iterrows()
-        }
+        f'{a["Activity Type"]} - {a["Start Time"]}': a["Activity ID"]
+        for _, a in activities_df.iterrows()
+    }
     activity = st.selectbox("Select activity", activity_options.keys())
     activity_id = activity_options[activity]
     activity = get_single_activity(activity_id)
@@ -106,6 +107,7 @@ def show_activities(activities_df):
         st.map(activity_df, size=1)
     except Exception:
         st.error("Cannot display activity GPS data")
+
 
 def get_agregated_activities(activities_df):
     unique_activities = activities_df["Activity Type"].unique()
@@ -191,7 +193,10 @@ def get_agregated_activities(activities_df):
 
 
 def update_activities():
-    r = httpx.get(BASE_API_URL + "garmin/activities/update", timeout=10)
+    r = httpx.get(
+        BASE_API_URL + "garmin/activities/update",
+        timeout=10,
+    )
     r_json = r.json()
     if r_json["success"] is True:
         st.success("Update Garmin activities success")
@@ -200,9 +205,55 @@ def update_activities():
 
 
 def get_activities():
-    r = httpx.get(BASE_API_URL + "garmin/activities", timeout=10)
+    r = httpx.get(
+        BASE_API_URL + "garmin/activities",
+        timeout=10,
+    )
     r_json = r.json()
     return r_json
+
+
+def show_current_month_activities():
+    activities = get_activities()
+    activities = [activities[k] for k in activities.keys()]
+    activities_df = pd.DataFrame(activities)
+    activities_df["Year"] = activities_df["Start Time"].apply(lambda x: parse(x).year)
+    activities_df["Month"] = activities_df["Start Time"].apply(lambda x: parse(x).month)
+    activities_df["Day"] = activities_df["Start Time"].apply(lambda x: parse(x).day)
+
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    current_month_activities_df = activities_df[activities_df["Month"] == current_month]
+    all_days_in_month = list(
+        range(1, calendar.monthrange(current_year, current_month)[1] + 1)
+    )
+    unique_activities = current_month_activities_df["Activity Type"].unique()
+    # group by activity type and count the number of activities
+    activities_per_day = {d: {"Total": 0} for d in all_days_in_month}
+    for i, row in current_month_activities_df.iterrows():
+        if row["Activity Type"] not in activities_per_day[row["Day"]].keys():
+            activities_per_day[row["Day"]][row["Activity Type"]] = 1
+        else:
+            activities_per_day[row["Day"]][row["Activity Type"]] += 1
+        activities_per_day[row["Day"]]["Total"] += 1
+
+    grouped_activities_df = pd.DataFrame(activities_per_day).T
+    grouped_activities_df["Day"] = grouped_activities_df.index
+
+    st.altair_chart(
+        alt.Chart(grouped_activities_df)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "Day",
+                sort=None,
+                axis=alt.Axis(grid=False),
+                scale=alt.Scale(domain=[all_days_in_month[0], all_days_in_month[-1]]),
+            ),
+            y=alt.Y("Total", axis=alt.Axis(title="Number of activities", grid=False)),
+        ),
+        use_container_width=True,
+    )
 
 
 def get_single_activity(activity):
@@ -218,14 +269,9 @@ def verify_code(code):
     r = httpx.get(BASE_API_URL + f"verify/{code}", timeout=10)
     r_json = r.json()
     return r_json
-def main():
-    st.set_page_config(page_title="exercise", page_icon="🏃")
 
-    if not st.session_state.get('token'):
-        st.info("Please authenticate")
-        code =  st.number_input("Enter token", key='token')
-        if code:
 
+def load_exercise_page():
     st.button("Refresh", on_click=update_activities)
 
     with st.spinner("Loading activities..."):
@@ -260,7 +306,20 @@ def main():
         st.write(activities_df)
         get_agregated_activities(activities_df)
 
-      
+
+@st.cache_data(experimental_allow_widgets=True)
+def my_access_token(opt_code):
+    r = httpx.get(BASE_API_URL + f"otp/{opt_code}", timeout=10)
+    if r.status_code != 200:
+        return None
+    r_json = r.json()
+    return r_json["access_token"]
+
+
+def main():
+    st.set_page_config(page_title="exercise", page_icon="🏃", layout="wide")
+    load_exercise_page()
+
 
 if __name__ == "__main__":
     main()

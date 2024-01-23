@@ -58,7 +58,6 @@ def get_crypto_entries(request: Request):
 @router.get("/single/{crypto_symbol}")
 def get_single_crypto(crypto_symbol: str, request: Request):
     r_crypto_rank = request.app.state.crypto_rank_client.get_symbols([crypto_symbol])
-    ic(r_crypto_rank)
     return r_crypto_rank
 
 
@@ -83,5 +82,4 @@ class CryptoRankClient:
                 "state": "active",
             },
         )
-        ic(r.json())
         return r.json()

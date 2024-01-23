@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from dateutil import parser
 import calendar
 import numpy as np
+from icecream import ic
 
 repos = None
 
@@ -48,11 +49,25 @@ def get_github_repos():
     return r_repos.json()
 
 
-def plot_current_month_commits(commits_df, current_month):
+def plot_current_month_commits(commits_df=None, current_month=None, current_year=None):
+    if commits_df is None:
+        repos_commits = get_github_repos()
+        commits = []
+        for repo in repos_commits:
+            for commit in repo["commits"]:
+                commit["repo"] = repo["name"]
+                commits_df = commits.append(commit)
+        commits_df = pd.DataFrame(commits)
+        commits_df["date"] = pd.to_datetime(commits_df["date"])
+    if current_month is None and current_year is None:
+        current_month = datetime.now().month
+        current_year = datetime.now().year
 
+    commits_df = commits_df[commits_df["date"].dt.year == current_year]
+    commits_df = commits_df[commits_df["date"].dt.month == current_month]
     # Get the number of weeks in the current month
-    num_weeks = np.ceil(commits_df["date"].dt.day.max() / 7)
-
+    num_weeks = len(calendar.monthcalendar(current_year, current_month))
+    ic(num_weeks)
     # Create a list of weekdays
     weekdays = [
         "Monday",
@@ -65,12 +80,12 @@ def plot_current_month_commits(commits_df, current_month):
     ]
     # Create a matrix to store the number of commits per weekday and week
     commits_matrix = np.zeros((int(num_weeks), 7))
-
     # Fill the matrix with the number of commits
     for _, commit in commits_df.iterrows():
         week = int((commit["date"].day - 1) / 7)
         weekday = commit["date"].weekday()
         commits_matrix[week][weekday] += 1
+    ic(commits_matrix)
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -78,6 +93,9 @@ def plot_current_month_commits(commits_df, current_month):
             x=weekdays,
             y=list(range(1, int(num_weeks) + 1)),
             colorscale="thermal",
+            showscale=False,
+            xgap=2,
+            ygap=3,
         ),
         layout=go.Layout(
             title=f"{calendar.month_name[current_month]} commits",
@@ -133,12 +151,10 @@ def main():
     )
 
     commits_df["date"] = pd.to_datetime(commits_df["date"])
-    filtered_commits = commits_df[commits_df["date"].dt.year == year_option]
-    filtered_commits = filtered_commits[
-        filtered_commits["date"].dt.month == month_option
-    ]
-    plot_current_month_commits(filtered_commits, current_month= month_option)
-    st.dataframe(filtered_commits, use_container_width=True)
+
+    plot_current_month_commits(
+        commits_df, current_month=month_option, current_year=year_option
+    )
 
     commits_per_month = (
         commits_df.groupby([commits_df["date"].dt.year, commits_df["date"].dt.month])
