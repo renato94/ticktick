@@ -77,7 +77,6 @@ class TickTickClient:
         return redirect_url
 
     def get_access_token(self):
-      
         post_endpoint = "https://ticktick.com/oauth/token"
         # Make the API call to retrieve the access token
         parameters = {
@@ -109,6 +108,15 @@ class TickTickClient:
         )
         return r.json()
 
+    def get_completed_tasks(self):
+        r = httpx.get(
+            "https://api.ticktick.com/api/v2/project/all/closed?from=&to=&status=Completed",
+            headers={"Authorization": "Bearer " + self.access_token},
+        )
+        ic(r.status_code)
+        ic(r.text)
+        return r
+
     def get_projects_data(self):
         projects = self.get_user_projects()
         projects_ids = [p["id"] for p in projects]
@@ -130,6 +138,14 @@ def verify_access_token(request: Request):
 
 def get_ticktick_client(request: Request):
     return request.app.state.ticktick_client
+
+
+@router.get("/completed", dependencies=[Depends(verify_access_token)])
+def get_completed_tasks(
+    request: Request, ticktick_client: TickTickClient = Depends(get_ticktick_client)
+):
+    tasks = ticktick_client.get_completed_tasks()
+    return tasks
 
 
 @router.get("/authenticate")

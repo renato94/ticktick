@@ -2,15 +2,17 @@ import streamlit as st
 from streamlit_extras.switch_page_button import switch_page
 import httpx
 from datetime import datetime
-from pages.coding import plot_current_month_commits
-from pages.exercise import show_current_month_activities
+from domain.todos import todos_summary
+
+from domain.exercise import show_current_month_activities
+from domain.coding import plot_current_month_commits
 
 
 def get_title():
     kanye_api = "https://api.kanye.rest/"
     r = httpx.get(kanye_api)
     st.title(str(datetime.now().date()))
-    st.write(f"\"{r.json()['quote']}\"")
+    st.write(f"\"{r.json()['quote']}\"\n - Kanye West")
 
 
 def main():
@@ -18,22 +20,13 @@ def main():
 
     get_title()
 
-    number = st.text_input("Enter token", key="token")
-    if number:
-        r = httpx.get(f"http://localhost:9090/otp/{number}")
-        if r.status_code == 200:
-            access_token = r.json()["access_token"]
-            st.session_state.access_token = access_token
-            st.success("Authenticated")
-        else:
-            st.error("Invalid token")
-
     exercise_btn = st.button("➤ Exercise")
     show_current_month_activities()
     if exercise_btn:
         switch_page("exercise")
     st.divider()
     todo_btn = st.button("➤ Todos")
+    todos_summary()
     if todo_btn:
         switch_page("todos")
     st.divider()

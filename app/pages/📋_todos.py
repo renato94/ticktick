@@ -1,12 +1,10 @@
-from datetime import datetime
 import streamlit as st
 import httpx
-import streamlit_authenticator as stauth
-from icecream import ic
-import yaml
-from yaml.loader import SafeLoader
-from dateutil import parser
+
+from domain.todos import todos_content
+from domain.commom import authenticated_page
 from config import BASE_API_URL
+from icecream import ic
 
 example_resp_todos = [
     {
@@ -170,36 +168,6 @@ example_resp_todos = [
 ]
 
 
-def get_ticktick_tasks():
-    r = httpx.get(BASE_API_URL + "ticktick/tasks")
-    r_json = r.json()
-    return r_json
-
-
-def todos_content():
-    tasks = get_ticktick_tasks()
-    st.metric("All tasks", len(tasks))
-
-    
-    for p in tasks:
-        project_name = p["project"]["name"] 
-        project_tasks = []
-        for t in p["tasks"]:
-            project_tasks.append(t["title"])
-        st.metric(label=project_name, value=len(project_tasks))
-        st.table(project_tasks)
-
-    todays_tasks = []
-    for p in tasks:
-        for t in p["tasks"]:
-            if (
-                "dueDate" in t.keys()
-                and parser.parse(t["dueDate"]).date() == datetime.now().date()
-            ):
-                todays_tasks.append(t["title"])
-    st.metric(label="Today's tasks", value=len(todays_tasks))
-    st.table(todays_tasks)
-
 
 
 
@@ -220,33 +188,9 @@ def page_content():
         st.rerun()
 
 
-def login_page():
-    users_yaml = "app/users.yaml"
-    with open(users_yaml) as file:
-        config = yaml.load(file, Loader=SafeLoader)
-
-    authenticator = stauth.Authenticate(
-        config["credentials"],
-        config["cookie"]["name"],
-        config["cookie"]["key"],
-        config["cookie"]["expiry_days"],
-        config["preauthorized"],
-    )
-
-    authenticator.login("Login", "main")
-    if st.session_state["authentication_status"]:
-        authenticator.logout("Logout", "main", key="unique_key")
-        page_content()
-    elif st.session_state["authentication_status"] is False:
-        st.error("Username/password is incorrect")
-
-    elif st.session_state["authentication_status"] is None:
-        st.warning("Please enter your username and password")
-
-
 def main():
     st.set_page_config(page_title="Todos", page_icon="📋")
-    login_page()
+    authenticated_page(page_content)
 
 
 if __name__ == "__main__":
