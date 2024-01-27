@@ -164,3 +164,6 @@ cython_debug/
 app/users.yaml
 garmin-connect-export
 garmin-export
+audio2head
+```
+app/CV-2022.pdf

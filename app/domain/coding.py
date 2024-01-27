@@ -1,11 +1,9 @@
 from datetime import datetime
 import httpx
 import streamlit as st
-from streamlit_card import card
 from config import BASE_API_URL
 import pandas as pd
 import plotly.graph_objects as go
-from dateutil import parser
 import calendar
 import numpy as np
 from icecream import ic

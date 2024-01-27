@@ -1,11 +1,10 @@
 import asyncio
 from uuid import uuid4
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from icecream import ic
-import jwt
+
 from api import create_access_token, verify_token
-from api.crypto import CryptoRankClient
-from api.exchanges_clients import KuCoinClient, MexcClient
+from api.exchanges_clients import KuCoinClient, MexcClient, CryptoRankClient
 from api.ticktick import TickTickClient, router as ticktick_router
 from api.garmin import router as garmin_router
 from api.github_api import GitHubClient, router as github_router
