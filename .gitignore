@@ -165,5 +165,6 @@ app/users.yaml
 garmin-connect-export
 garmin-export
 audio2head
-```
+pauses
 app/CV-2022.pdf
+celerybeat-schedule*
