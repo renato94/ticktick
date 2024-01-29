@@ -20,3 +20,7 @@ PyGithub
 plotly
 pyotp
 qrcode
+celery
+redis
+flower
+crontab

@@ -3,14 +3,14 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException
 from icecream import ic
 
-from api import create_access_token, verify_token
-from api.exchanges_clients import KuCoinClient, MexcClient, CryptoRankClient
-from api.ticktick import TickTickClient, router as ticktick_router
-from api.garmin import router as garmin_router
-from api.github_api import GitHubClient, router as github_router
-from api.crypto import router as crypto_router
-from api.finances import router as finances_router
-from api.config import (
+from backend.api import create_access_token, verify_token
+from backend.api.exchanges_clients import KuCoinClient, MexcClient, CryptoRankClient
+from backend.api.ticktick import TickTickClient, router as ticktick_router
+from backend.api.garmin import router as garmin_router
+from backend.api.github_api import GitHubClient, router as github_router
+from backend.api.crypto import router as crypto_router
+from backend.api.finances import router as finances_router
+from backend.config import (
     ALGORITHM,
     GITHUB_ACCESS_TOKEN,
     KUCOIN_API_BASE_URL,

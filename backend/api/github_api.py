@@ -23,6 +23,9 @@ class GitHubClient:
     def get_user(self):
         return self.g.get_user()
 
+    def set_repos(self, repos):
+        self.repos = repos
+
     def get_repo_commits(self, repo):
         ttc = repo.get_commits().totalCount
         commits = []
@@ -36,7 +39,7 @@ class GitHubClient:
         commits_dict = [
             {
                 "name": c.commit.author.name,
-                "date": c.commit.author.date,
+                "date": str(c.commit.author.date),
                 "message": c.commit.message,
                 "size": c.stats.total,
             }
@@ -45,14 +48,15 @@ class GitHubClient:
 
         return commits_dict
 
-    async def get_repos(self):
+    def get_repos(self):
+        # to be used by celery periodic task
         ic("getting repos")
         raw_repos = self.user.get_repos(affiliation="owner")
         for r in raw_repos:
             self.repos.append(
                 {
                     "name": r.full_name,
-                    "created_at": r.created_at,
+                    "created_at": str(r.created_at),
                     "description": r.description,
                     "languages": r.get_languages(),
                     "commits": self.get_repo_commits(r),
@@ -60,6 +64,7 @@ class GitHubClient:
             )
 
         ic("got repos")
+        return self.repos
 
 
 def get_github_client(request: Request):
@@ -68,7 +73,7 @@ def get_github_client(request: Request):
 
 @router.get("/user")
 def get_user(g: Github = Depends(get_github_client)):
-    user = g.get_user()
+    user = g.user
     return {
         "name": user.name,
         "avatar_url": user.avatar_url,
@@ -77,6 +82,12 @@ def get_user(g: Github = Depends(get_github_client)):
         "created_at": user.created_at,
         "html_url": user.html_url,
     }
+
+
+@router.post("/repos/set")
+async def set_repos(request: Request, g: GitHubClient = Depends(get_github_client)):
+    g.set_repos(await request.json())
+    return {"success", True}
 
 
 @router.get("/repos")

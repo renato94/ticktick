@@ -1,6 +1,6 @@
 import jwt
 from datetime import datetime, timedelta, timezone
-from api.config import ALGORITHM, SECRET_KEY
+from backend.config import ALGORITHM, SECRET_KEY
 from fastapi import Request
 from icecream import ic
 

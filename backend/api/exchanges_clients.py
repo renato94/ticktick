@@ -9,7 +9,7 @@ from typing import List
 import httpx
 from abc import ABC, abstractmethod
 
-from api.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
+from backend.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
 from icecream import ic
 
 
@@ -172,6 +172,15 @@ class MexcClient(ExchangeClient):
             )
         return klines
 
+    def get_symbol_price(self, symbols=List[str]):
+        ic(symbols)
+        symbols = [f"{symbol}USDT" for symbol in symbols]
+        endpoint = "/api/v3/ticker/price"
+        headers = self.prepare_headers()
+        r = self.get(endpoint, headers=headers, params={"symbols": "all"})
+        r_json = r.json()
+        return r_json
+
 
 class KuCoinClient(ExchangeClient):
     class KLINE_INTERVALS(Enum):
@@ -226,6 +235,14 @@ class KuCoinClient(ExchangeClient):
         endpoint = "/api/v1/accounts"
         headers = self.prepare_headers(endpoint)
         r_data = self.get(endpoint, headers=headers)
+        r_json = r_data.json()
+        return r_json
+
+    def get_symbol_price(self, symbols: List[str]):
+        endpoint = "/api/v1/prices"
+        headers = self.prepare_headers(endpoint)
+        params = {"base": "USD", "currencies": ",".join(symbols)}
+        r_data = self.get(endpoint, headers=headers, params=params)
         r_json = r_data.json()
         return r_json
 

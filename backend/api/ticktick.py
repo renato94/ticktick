@@ -2,7 +2,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
-from api.config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
+from backend.config import TICKTICK_CLIENT_ID, TICKTICK_CLIENT_SECRET
 from icecream import ic
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Depends

@@ -1,7 +1,7 @@
-from api.sheets import pull_sheet_data
+from backend.api.sheets import pull_sheet_data
 from fastapi import APIRouter
 import calendar
-from api.config import SCOPES, SPREADSHEET_FINANCES_ID
+from backend.config import SCOPES, SPREADSHEET_FINANCES_ID
 import pandas as pd
 from datetime import datetime
 

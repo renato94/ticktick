@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 import gpxpy
 from icecream import ic
 import csv
-from api.config import (
+from backend.config import (
     GARMIN_PASSWORD,
     GARMIN_USERNAME,
     GARMIN_EXPORT_PATH,
@@ -14,7 +14,7 @@ from api.config import (
 import pandas as pd
 import geopandas as gpd
 
-from api import verify_token
+from backend.api import verify_token
 
 router = APIRouter(prefix="/garmin", tags=["garmin"])
 
