@@ -123,6 +123,12 @@ def profit(s):
     )
 
 
+def get_trades():
+    r_data = httpx.get(BASE_API_URL + "crypto/trades", timeout=10)
+    r_json = r_data.json()
+    return r_json
+
+
 def plot_holdings(crypto_data):
     with st.expander("Expand", expanded=False):
         crypto_df = pd.DataFrame(crypto_data).T
@@ -288,7 +294,11 @@ def main():
         # # remove cryptos already sold
         # crypto_data = {k: v for k, v in crypto_data.items() if not v["sold euro"]}
         # plot_holdings(crypto_data)
+        trades = get_trades()
+        for e in trades["dfs"]:
+            st.dataframe(pd.read_json(e))
 
+        st.write(trades["accounts"])
         crypto_accounts = get_crypto_account()
         holdings = []
         for k, v in crypto_accounts.items():

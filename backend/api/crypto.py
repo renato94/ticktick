@@ -3,8 +3,6 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
 from typing import List
 from icecream import ic
-import httpx
-from backend.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
 from fastapi import APIRouter, Depends, HTTPException, Request
 from backend.config import SCOPES, SPREADSHEET_CRYPTO_ID
 from backend.api.exchanges_clients import KuCoinClient, MexcClient
@@ -203,7 +201,7 @@ def get_symbol_klines(
             klines = kucoin_client.get_symbol_kline(symbol, interval, start_at, end_at)
         elif exchange == "mexc":
             klines = mexc_client.get_symbol_kline(symbol, interval, start_at, end_at)
-            
+
         else:
             raise HTTPException(400, "Invalid Exchange")
         df = pd.DataFrame(klines)
@@ -220,6 +218,43 @@ def get_symbol_klines(
             drive_service.files().create(body=file_metadata, media_body=media).execute()
         )
         return df.to_json()
+
+
+@router.get("/trades")
+def get_trades(
+    drive_service=Depends(get_drive_service),
+    kucoin_client: KuCoinClient = Depends(get_kucoin_client),
+):
+    exchanges = ["kucoin", "mexc"]
+    dfs = []
+    accounts = []
+    for e in exchanges:
+        result = (
+            drive_service.files()
+            .list(
+                q=f"name='{e}-trades.csv' and mimeType='text/csv'",
+            )
+            .execute()
+        )
+        # get file id
+        file_id = result.get("files")[0].get("id")
+        # download file
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        df = pd.read_csv(fh)
+        if e == "kucoin":
+            account = None
+            account = kucoin_client.parse_kucoin_account(df)
+        elif e == "mexc":
+            account = None
+        accounts.append(account)
+        dfs.append(df)
+    return {"dfs": [df.to_json() for df in dfs], "accounts": accounts}
 
 
 def calculate_support_resistance(df):

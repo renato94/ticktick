@@ -2,12 +2,14 @@ import base64
 from dataclasses import dataclass
 import hashlib
 import hmac
+import json
 import time
 from enum import Enum
 from typing import List
 
 import httpx
 from abc import ABC, abstractmethod
+from backend.api.crypto_manager.account import Account, Balance, Trade
 
 from backend.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
 from icecream import ic
@@ -173,6 +175,13 @@ class MexcClient(ExchangeClient):
         r_json = r.json()
         return r_json
 
+    def get_trades(self, symbol: str):
+        endpoint = "/api/v3/trades"
+        headers = self.prepare_headers()
+        r = self.get(endpoint, headers=headers, params={"symbol": symbol})
+        r_json = r.json()
+        return r_json
+
 
 class KuCoinClient(ExchangeClient):
     class KLINE_INTERVALS(Enum):
@@ -185,9 +194,29 @@ class KuCoinClient(ExchangeClient):
         ONE_DAY = "1day"
         ONE_WEEK = "1week"
 
+    def parse_kucoin_account(self, df):
+        account = Account(exchange="kucoin")
+        for i, row in df.iterrows():
+            symbol = row["Symbol"]
+            trade = Trade(
+                time=row["Order Time(UTC+01:00)"],
+                type=row["Side"],
+                symbol=row["Symbol"],
+                fee=row["Fee"],
+                filled_ammount=row["Filled Amount"],
+                avg_price=row["Avg. Filled Price"],
+            )
+            if symbol in account.balances.keys():
+                account.balances[symbol].trades.append(trade)
+            else:
+                account.balances[symbol] = Balance(symbol=symbol, trades=[trade])
+        return account
+
     def prepare_headers(self, endpoint, params=None):
         now = int(time.time() * 1000)
         str_to_sign = str(now) + "GET" + endpoint
+        if params:
+            str_to_sign += "?" + "&".join([f"{k}={v}" for k, v in params.items()])
         signature = base64.b64encode(
             hmac.new(
                 self.api_secret.encode("utf-8"),
@@ -274,6 +303,15 @@ class KuCoinClient(ExchangeClient):
                 )
             )
         return klines
+
+    def get_trades(self):
+        endpoint = "/api/v1/fills"
+        params = {"status": "done"}
+        headers = self.prepare_headers(endpoint, params=params)
+
+        r = self.get(endpoint, headers=headers, params=params)
+        r_json = r.json()
+        return r_json
 
 
 class CryptoRankClient:
