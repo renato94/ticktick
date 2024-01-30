@@ -7,9 +7,8 @@ from icecream import ic
 import pandas as pd
 
 
-def gsheet_api_check(SCOPES):
+def creeds_api_check(SCOPES):
     creds = None
-    ic(os.path.exists("token.pickle"))
     if os.path.exists("token.pickle"):
         with open("token.pickle", "rb") as token:
             creds = pickle.load(token)
@@ -24,12 +23,59 @@ def gsheet_api_check(SCOPES):
     return creds
 
 
-def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL) -> pd.DataFrame:
-    creds = gsheet_api_check(SCOPES)
-    service = build("sheets", "v4", credentials=creds)
-    sheet = service.spreadsheets()
+def create_drive_folder(drive_service, folder_name, parent_id=None):
+    file_metadata = {
+        "name": folder_name,
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+    if parent_id:
+        file_metadata["parents"] = [parent_id]
+    file = drive_service.files().create(body=file_metadata, fields="id").execute()
+    print(f'Folder ID: "{file.get("id")}".')
+    return file.get("id")
+
+
+def create_sheet(drive_service, folder_id, sheet_name):
+    file_metadata = {
+        "name": sheet_name,
+        "parents": [folder_id],
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+    }
+    file = drive_service.files().create(body=file_metadata, fields="id").execute()
+    print(f"Sheet ID: {file.get('id')}.")
+    return file.get("id")
+
+
+def move_file_to_folder(drive_service, file_id, folder_id):
+    file = drive_service.files().get(fileId=file_id, fields="parents").execute()
+    previous_parents = ",".join(file.get("parents"))
+    # Move the file to the new folder
+    file = (
+        drive_service.files()
+        .update(
+            fileId=file_id,
+            addParents=folder_id,
+            removeParents=previous_parents,
+            fields="id, parents",
+        )
+        .execute()
+    )
+    return file.get("parents")
+
+
+def get_google_services(SCOPES):
+    creds = creeds_api_check(SCOPES)
+    drive_service = build("drive", "v3", credentials=creds)
+    sheet_service = build("sheets", "v4", credentials=creds)
+    return drive_service, sheet_service
+
+
+def pull_sheet_data(sheet_service, SPREADSHEET_ID, DATA_TO_PULL) -> pd.DataFrame:
+    sheet_service = sheet_service.spreadsheets()
     result = (
-        sheet.values().get(spreadsheetId=SPREADSHEET_ID, range=DATA_TO_PULL).execute()
+        sheet_service.values()
+        .get(spreadsheetId=SPREADSHEET_ID, range=DATA_TO_PULL)
+        .execute()
     )
     values = result.get("values", [])
 
@@ -38,7 +84,7 @@ def pull_sheet_data(SCOPES, SPREADSHEET_ID, DATA_TO_PULL) -> pd.DataFrame:
         return pd.DataFrame()
     else:
         rows = (
-            sheet.values()
+            sheet_service.values()
             .get(spreadsheetId=SPREADSHEET_ID, range=DATA_TO_PULL)
             .execute()
         )

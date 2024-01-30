@@ -5,6 +5,7 @@ from icecream import ic
 
 from backend.api import create_access_token, verify_token
 from backend.api.exchanges_clients import KuCoinClient, MexcClient, CryptoRankClient
+from backend.api.sheets import create_drive_folder, get_google_services
 from backend.api.ticktick import TickTickClient, router as ticktick_router
 from backend.api.garmin import router as garmin_router
 from backend.api.github_api import GitHubClient, router as github_router
@@ -21,7 +22,11 @@ from backend.config import (
     MEXC_API_SECRET,
     MEXC_BASE_URL,
     OPT_KEY,
+    SCOPES,
     SECRET_KEY,
+    DRIVE_BASE_FOLDER,
+    DRIVE_CRYPTO_FOLDER,
+    DRIVE_GARMIN_FOLDER,
 )
 from pyotp import TOTP
 from uuid import uuid4
@@ -39,8 +44,63 @@ app.include_router(crypto_router)
 app.include_router(finances_router)
 
 
+def create_drive_main_folders(
+    drive_service, DRIVE_BASE_FOLDER, DRIVE_CRYPTO_FOLDER, DRIVE_GARMIN_FOLDER
+):
+    # BASE FOLDER
+    result_base_folder = (
+        drive_service.files()
+        .list(
+            q=f"name='{DRIVE_BASE_FOLDER}' and mimeType='application/vnd.google-apps.folder'",
+        )
+        .execute()
+    )
+    if result_base_folder.get("files") == []:  # Create base folder
+        ic("creating base folder")
+        base_folder_id = create_drive_folder(drive_service, DRIVE_BASE_FOLDER)
+    else:
+        base_folder_id = result_base_folder.get("files")[0].get("id")
+    # CRYPTO FOLDER
+    result_crypto_folder = (
+        drive_service.files()
+        .list(
+            q=f"name='{DRIVE_CRYPTO_FOLDER}' and mimeType='application/vnd.google-apps.folder'",
+        )
+        .execute()
+    )
+    if result_crypto_folder.get("files") == []:
+        crypto_folder_id = create_drive_folder(
+            drive_service, DRIVE_CRYPTO_FOLDER, parent_id=base_folder_id
+        )
+    else:
+        crypto_folder_id = result_crypto_folder.get("files")[0].get("id")
+    # GARMIN FOLDER
+    result_garmin_folder = (
+        drive_service.files()
+        .list(
+            q=f"name='{DRIVE_GARMIN_FOLDER}' and mimeType='application/vnd.google-apps.folder'",
+        )
+        .execute()
+    )
+    if result_garmin_folder.get("files") == []:
+        garmin_folder_id = create_drive_folder(
+            drive_service, DRIVE_GARMIN_FOLDER, parent_id=base_folder_id
+        )
+    else:
+        garmin_folder_id = result_garmin_folder.get("files")[0].get("id")
+    return crypto_folder_id, garmin_folder_id
+
+
 @app.on_event("startup")
 def startup_event():
+    drive_service, sheets_service = get_google_services(SCOPES)
+
+    crypto_folder_id, garmin_folder_id = create_drive_main_folders(
+        drive_service, DRIVE_BASE_FOLDER, DRIVE_CRYPTO_FOLDER, DRIVE_GARMIN_FOLDER
+    )
+    app.state.crypto_folder_id = crypto_folder_id
+    app.state.garmin_folder_id = garmin_folder_id
+    app.state.drive_service = drive_service
     github_client = GitHubClient(GITHUB_ACCESS_TOKEN)
     ticktick_client = TickTickClient()
     crypto_rank_client = CryptoRankClient()

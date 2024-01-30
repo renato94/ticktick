@@ -99,19 +99,20 @@ def get_all_symbols():
     return r_json
 
 
-def get_crypto_klines_data(symbol, interval, start_date, end_date):
+def get_crypto_klines_data(exchange, symbol, interval, start_date, end_date):
     r_data = httpx.get(
         BASE_API_URL + "crypto/klines",
         timeout=100,
         params={
+            "exchange": exchange,
             "symbol": symbol,
             "interval": interval,
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_at": start_date,
+            "end_at": end_date,
         },
     )
     r_json = r_data.json()
-    return r_json
+    return pd.read_json(r_json)
 
 
 def profit(s):
@@ -198,25 +199,27 @@ def main():
 
     st.header("Crypto")
     crypto_symbols = get_all_symbols()
-    symbols = []
+    symbols_options = []
     for k in crypto_symbols.keys():
-        symbols = symbols + crypto_symbols[k]
+        symbols_options = symbols_options + [f"{k}={c}" for c in crypto_symbols[k]]
 
     intervals = ["ONE_HOUR", "FOUR_HOURS", "ONE_DAY", "ONE_WEEK"]
     with st.form("my_form"):
-        symbol_option = st.selectbox("Symbol", symbols)
+        symbol_option = st.selectbox("Symbol", symbols_options)
         interval = st.selectbox("interval", intervals)
         start_time = st.date_input("start time")
         end_time = st.date_input("end time")
-
         submitted = st.form_submit_button("Submit")
         if submitted:
-            start_date = start_time.strftime("%Y-%m-%d")
-            end_date = end_time.strftime("%Y-%m-%d")
-            crypto_klines_data = get_crypto_klines_data(
-                symbol_option, interval, start_date, end_date
+            start_date = int(
+                datetime.combine(start_time, datetime.min.time()).timestamp()
             )
-            df = pd.DataFrame(crypto_klines_data)
+            end_date = int(datetime.combine(end_time, datetime.min.time()).timestamp())
+            exchange = symbol_option.split("=")[0]
+            symbol_option = symbol_option.split("=")[1]
+            df = get_crypto_klines_data(
+                exchange, symbol_option, interval, start_date, end_date
+            )
 
             df = df.astype(
                 {
@@ -233,7 +236,7 @@ def main():
             fig = go.Figure(
                 data=[
                     go.Candlestick(
-                        x=df["time"],
+                        x=df["time"].apply(lambda x: datetime.fromtimestamp(x)),
                         open=df["open"],
                         high=df["high"],
                         low=df["low"],
@@ -242,38 +245,38 @@ def main():
                     ),
                 ]
             )
-            c = 0
-            while 1:
-                if c > len(ss) - 1:
-                    fig.add_shape(
-                        type="line",
-                        x0=ss[c][0] - 3,
-                        y0=ss[c][1],
-                        x1=200,
-                        y1=ss[c][1],
-                        line=dict(
-                            color="green",
-                            width=1,
-                            dash="dot",
-                        ),
-                    )
-                c += 1
-            c = 0
-            while 1:
-                if c > len(rr) - 1:
-                    fig.add_shape(
-                        type="line",
-                        x0=rr[c][0] - 3,
-                        y0=rr[c][1],
-                        x1=200,
-                        y1=rr[c][1],
-                        line=dict(
-                            color="green",
-                            width=1,
-                            dash="dot",
-                        ),
-                    )
-                c += 1
+            # c = 0
+            # while 1:
+            #     if c > len(ss) - 1:
+            #         fig.add_shape(
+            #             type="line",
+            #             x0=ss[c][0] - 3,
+            #             y0=ss[c][1],
+            #             x1=200,
+            #             y1=ss[c][1],
+            #             line=dict(
+            #                 color="green",
+            #                 width=1,
+            #                 dash="dot",
+            #             ),
+            #         )
+            #     c += 1
+            # c = 0
+            # while 1:
+            #     if c > len(rr) - 1:
+            #         fig.add_shape(
+            #             type="line",
+            #             x0=rr[c][0] - 3,
+            #             y0=rr[c][1],
+            #             x1=200,
+            #             y1=rr[c][1],
+            #             line=dict(
+            #                 color="green",
+            #                 width=1,
+            #                 dash="dot",
+            #             ),
+            #         )
+            #     c += 1
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
             # crypto_klines_df = pd.DataFrame(crypto_klines_data)
@@ -290,10 +293,9 @@ def main():
         holdings = []
         for k, v in crypto_accounts.items():
             for symbol_name in crypto_accounts[k]:
-                ic(symbol_name)
                 crypto_accounts[k][symbol_name]["exchange"] = k
                 crypto_accounts[k][symbol_name]["symbol"] = symbol_name
-                
+
                 holdings.append(crypto_accounts[k][symbol_name])
         account_df = pd.DataFrame(holdings)
         account_df = account_df.astype(
@@ -308,28 +310,36 @@ def main():
         st.dataframe(account_df)
 
         st.metric("Total", f"${total}")
+        st.altair_chart(
+            alt.Chart(account_df)
+            .mark_arc()
+            .encode(
+                theta="percentage",
+                color="symbol",
+                tooltip=["balance usd", "symbol"],
+            )
+        )
+    # with st.spinner("Loading expenses..."):
+    #     current_expenses_data = get_current_expenses_data()
+    #     subscriptions_data = get_subscriptions()
 
-    with st.spinner("Loading expenses..."):
-        current_expenses_data = get_current_expenses_data()
-        subscriptions_data = get_subscriptions()
+    #     st.header(f"{calendar.month_name[datetime.now().month]} Expenses")
 
-        st.header(f"{calendar.month_name[datetime.now().month]} Expenses")
-
-        current_expenses_df = pd.DataFrame(current_expenses_data)
-        total_monthly_expenses = current_expenses_df["Total"].sum()
-        st.subheader(f"Total: €{total_monthly_expenses}")
-        st.bar_chart(current_expenses_df[["Date", "Total"]].set_index("Date"))
-        with st.expander("Expand", expanded=False):
-            st.dataframe(current_expenses_df)
-        subscriptions_df = pd.DataFrame(subscriptions_data)
-        monthly_subscriptions = subscriptions_df[
-            subscriptions_df["Billing period"] == "monthly"
-        ]
-        st.header("Subscriptions")
-        total_monthly_subscriptions = monthly_subscriptions["Solo Value"].sum()
-        st.subheader(f"Total: €{total_monthly_subscriptions}")
-        with st.expander("Expand", expanded=False):
-            st.dataframe(subscriptions_df)
+    #     current_expenses_df = pd.DataFrame(current_expenses_data)
+    #     total_monthly_expenses = current_expenses_df["Total"].sum()
+    #     st.subheader(f"Total: €{total_monthly_expenses}")
+    #     st.bar_chart(current_expenses_df[["Date", "Total"]].set_index("Date"))
+    #     with st.expander("Expand", expanded=False):
+    #         st.dataframe(current_expenses_df)
+    #     subscriptions_df = pd.DataFrame(subscriptions_data)
+    #     monthly_subscriptions = subscriptions_df[
+    #         subscriptions_df["Billing period"] == "monthly"
+    #     ]
+    #     st.header("Subscriptions")
+    #     total_monthly_subscriptions = monthly_subscriptions["Solo Value"].sum()
+    #     st.subheader(f"Total: €{total_monthly_subscriptions}")
+    #     with st.expander("Expand", expanded=False):
+    #         st.dataframe(subscriptions_df)
 
 
 if __name__ == "__main__":

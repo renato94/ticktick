@@ -16,15 +16,11 @@ celery.conf.result_backend = os.environ.get(
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    # Calls test('world') every 30 seconds
-    # sender.add_periodic_task(5.0, periodic_task.s(), expires=10)
-    sender.add_periodic_task(10, get_github_repos.s(), expires=10)
-
-
-@celery.task(name="periodic_task")
-def periodic_task():
-    time.sleep(2)
-    return True
+    sender.add_periodic_task(
+        crontab(minute=0, hour="*/3"),  # executes every 3 hours
+        get_github_repos.s(),
+        expires=10,
+    )
 
 
 @celery.task(name="github_info")

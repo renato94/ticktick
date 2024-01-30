@@ -130,6 +130,14 @@ class TickTickClient:
             tasks.append(r.json())
         return tasks
 
+    def get_project_task(self, project_id, task_id):
+        endpoint = f"/completed/v1/project/{project_id}/task/{task_id}"
+        r = httpx.get(
+            self.base_url + endpoint,
+            headers={"Authorization": "Bearer " + self.access_token},
+        )
+        return r.json()
+
 
 def verify_access_token(request: Request):
     if not request.app.state.ticktick_client.access_token:
@@ -140,7 +148,7 @@ def get_ticktick_client(request: Request):
     return request.app.state.ticktick_client
 
 
-@router.get("/completed", dependencies=[Depends(verify_access_token)])
+@router.get("/completed")
 def get_completed_tasks(
     request: Request, ticktick_client: TickTickClient = Depends(get_ticktick_client)
 ):
@@ -164,14 +172,23 @@ def get_token(request: Request):
     return {"success": True}
 
 
-@router.get("/authenticated", dependencies=[Depends(verify_access_token)])
+@router.get("/authenticated")
 def get_is_authenticated(request: Request):
     return {"success": True}
 
 
-@router.get("/tasks", dependencies=[Depends(verify_access_token)])
+@router.get("/tasks")
 def get_project_data(
     request: Request, ticktick_client: TickTickClient = Depends(get_ticktick_client)
 ):
     tasks = ticktick_client.get_projects_data()
     return tasks
+
+
+@router.get("/task")
+def get_task(
+    project_id: str,
+    task_id: str,
+    ticktick_client: TickTickClient = Depends(get_ticktick_client),
+):
+    return ticktick_client.get_project_task(project_id=project_id, task_id=task_id)

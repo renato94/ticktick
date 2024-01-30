@@ -1,11 +1,15 @@
+from datetime import datetime
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import io
 from typing import List
 from icecream import ic
 import httpx
 from backend.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from backend.config import SCOPES, SPREADSHEET_CRYPTO_ID
 from backend.api.exchanges_clients import KuCoinClient, MexcClient
 from backend.api.sheets import pull_sheet_data
+import pandas as pd
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
@@ -100,7 +104,6 @@ def get_account(
 ):
     r_kucoin_account = kucoin_client.get_account_summary()
     kucoin_summary = {}
-    ic(r_kucoin_account)
     for currency_data in r_kucoin_account["data"]:
         currency_name = currency_data["currency"]
         if not round(float(currency_data["available"]), 1) < 1:
@@ -114,13 +117,12 @@ def get_account(
     r_currencies_price_kucoin = kucoin_client.get_symbol_price(
         symbols=currencies_kucoin
     )
-    ic(r_currencies_price_kucoin)
 
-    ic(kucoin_summary)
     for currencie_name in kucoin_summary.keys():
-        ic(currencie_name)
-        kucoin_summary[currencie_name]["price"] = r_currencies_price_kucoin["data"][currencie_name]
-    
+        kucoin_summary[currencie_name]["price"] = r_currencies_price_kucoin["data"][
+            currencie_name
+        ]
+
     # ic(r_currencies_price_kucoin)
     r_mexc_account = mexc_client.get_account_summary()
     mexc_summary = {}
@@ -151,20 +153,73 @@ def get_account(
     }
 
 
+def get_drive_service(request: Request):
+    return request.app.state.drive_service
+
+
 @router.get("/klines")
 def get_symbol_klines(
+    request: Request,
+    exchange: str,
     symbol: str,
     interval: str,
     start_at: int = None,
     end_at: int = None,
+    drive_service=Depends(get_drive_service),
     kucoin_client: KuCoinClient = Depends(get_kucoin_client),
     mexc_client: MexcClient = Depends(get_mex_client),
 ):
-    r_kucoin_klines = kucoin_client.get_symbol_kline(symbol, interval, start_at, end_at)
-    r_mex_klines = mexc_client.get_symbol_kline(symbol, interval, start_at, end_at)
-    if r_kucoin_klines:
-        return r_kucoin_klines
-    return r_mex_klines
+    ic(start_at, end_at)
+    # check if it exists on drive saved klines
+    crypto_folder_id = request.app.state.crypto_folder_id
+    start_date = datetime.fromtimestamp(start_at).strftime("%Y-%m-%d")
+    end_date = datetime.fromtimestamp(end_at).strftime("%Y-%m-%d")
+
+    csv_name = f"{exchange}-{symbol}_{interval}_{start_date}_{end_date}.csv"
+    result_kline_exists = (
+        drive_service.files()
+        .list(
+            q=f"name='{csv_name}' and mimeType='text/csv'",
+        )
+        .execute()
+    )
+    if result_kline_exists.get("files") != []:
+        ic(f"{csv_name} exists")
+        # get file id
+        file_id = result_kline_exists.get("files")[0].get("id")
+        # download file
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        df = pd.read_csv(fh)
+        return df.to_json()
+    else:
+        ic(f"{csv_name} does not exist")
+        if exchange == "kucoin":
+            klines = kucoin_client.get_symbol_kline(symbol, interval, start_at, end_at)
+        elif exchange == "mexc":
+            klines = mexc_client.get_symbol_kline(symbol, interval, start_at, end_at)
+            
+        else:
+            raise HTTPException(400, "Invalid Exchange")
+        df = pd.DataFrame(klines)
+        ic(df.columns)
+        # save to drive
+        df.to_csv(csv_name)
+        file_metadata = {
+            "name": csv_name,
+            "parents": [crypto_folder_id],
+            "mimeType": "text/csv",
+        }
+        media = MediaFileUpload(csv_name, mimetype="text/csv")
+        file = (
+            drive_service.files().create(body=file_metadata, media_body=media).execute()
+        )
+        return df.to_json()
 
 
 def calculate_support_resistance(df):

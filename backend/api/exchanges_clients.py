@@ -28,7 +28,6 @@ class ExchangeClient(ABC):
         pass
 
     def get(self, endpoint, headers: dict, params=None):
-        ic(params)
         return self.client.request(
             "GET", str(self.base_url) + endpoint, params=params, headers=headers
         )
@@ -43,8 +42,6 @@ class ExchangeClient(ABC):
         )
 
     def map_interval(self, interval: str):
-        ic(self.KLINE_INTERVALS.__dict__[interval].value)
-        ic(interval)
         return self.KLINE_INTERVALS.__dict__[interval].value
 
 
@@ -129,9 +126,7 @@ class MexcClient(ExchangeClient):
         r = self.get(endpoint, headers=headers, params=params)
         return r.json()
 
-    def get_symbol_kline(
-        self, symbol, interval, start_at, end_at, *, params=None
-    ) -> List[Kline]:
+    def get_symbol_kline(self, symbol, interval, start_at, end_at) -> List[Kline]:
         endpoint = "/api/v3/klines"
         """
         Parameters:
@@ -146,14 +141,12 @@ class MexcClient(ExchangeClient):
         params = {
             "symbol": symbol,
             "interval": interval,
-            "startTime": start_at,
-            "endTime": end_at,
+            "startTime": start_at * 1000,
+            "endTime": end_at * 1000,
         }
-        ic(params)
         headers = self.prepare_headers()
         r = self.get(endpoint, headers=headers, params=params)
         r_json = r.json()
-        ic(r_json)
 
         if r.status_code != 200:
             return []
@@ -162,7 +155,7 @@ class MexcClient(ExchangeClient):
         for kline in r_json:
             klines.append(
                 Kline(
-                    time=kline[0],
+                    time=kline[0] / 1000,  # timestamp
                     open=kline[1],
                     high=kline[2],
                     low=kline[3],
@@ -173,7 +166,6 @@ class MexcClient(ExchangeClient):
         return klines
 
     def get_symbol_price(self, symbols=List[str]):
-        ic(symbols)
         symbols = [f"{symbol}USDT" for symbol in symbols]
         endpoint = "/api/v3/ticker/price"
         headers = self.prepare_headers()
@@ -266,6 +258,7 @@ class KuCoinClient(ExchangeClient):
             },
         )
         r_json = r_data.json()
+        ic(r_json)
         klines = []
         if "data" not in r_json.keys():
             return []
