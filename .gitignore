@@ -168,3 +168,4 @@ audio2head
 pauses
 app/CV-2022.pdf
 celerybeat-schedule*
+*.csv

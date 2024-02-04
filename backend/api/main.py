@@ -101,6 +101,7 @@ def startup_event():
     app.state.crypto_folder_id = crypto_folder_id
     app.state.garmin_folder_id = garmin_folder_id
     app.state.drive_service = drive_service
+    app.state.sheets_service = sheets_service
     github_client = GitHubClient(GITHUB_ACCESS_TOKEN)
     ticktick_client = TickTickClient()
     crypto_rank_client = CryptoRankClient()

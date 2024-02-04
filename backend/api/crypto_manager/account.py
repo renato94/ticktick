@@ -1,14 +1,19 @@
+import enum
 from pydantic import BaseModel
 from typing import Dict, List
 
 
+class TradeType(enum.Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
 class Trade(BaseModel):
     time: str
-    type: str
+    type: TradeType
     symbol: str
-    fee: float
     filled_ammount: float
-    avg_price: float
+    fee: float = 0.0
 
 
 class Balance(BaseModel):

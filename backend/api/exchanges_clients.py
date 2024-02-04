@@ -1,5 +1,6 @@
 import base64
 from dataclasses import dataclass
+from datetime import datetime
 import hashlib
 import hmac
 import json
@@ -81,6 +82,23 @@ class MexcClient(ExchangeClient):
         ONE_WEEK = "1W"
         ONE_MONTH = "1M"
 
+    def parse_mexc_account(self, df):
+        account = Account(exchange="mexc")
+        for i, row in df.iterrows():
+            symbol = row["Crypto"].replace("USDT", "")
+            if row["Transaction Type"] == "Spot Trading":
+                trade = Trade(
+                    time=row["Creation Time(UTC+1)"],
+                    type="BUY" if row["Direction"] == "Inflow" else "SELL",
+                    symbol=symbol,
+                    filled_ammount=row["Quantity"],
+                )
+                if symbol in account.balances.keys():
+                    account.balances[symbol].trades.append(trade)
+                else:
+                    account.balances[symbol] = Balance(symbol=symbol, trades=[trade])
+        return account
+
     def prepare_headers(self):
         headers = {"Content-Type": "application/json", "X-MEXC-APIKEY": self.api_key}
         return headers
@@ -128,7 +146,9 @@ class MexcClient(ExchangeClient):
         r = self.get(endpoint, headers=headers, params=params)
         return r.json()
 
-    def get_symbol_kline(self, symbol, interval, start_at, end_at) -> List[Kline]:
+    def get_symbol_kline(
+        self, symbol, interval, expected_klines, start_at, end_at
+    ) -> List[Kline] | None:
         endpoint = "/api/v3/klines"
         """
         Parameters:
@@ -149,7 +169,7 @@ class MexcClient(ExchangeClient):
         headers = self.prepare_headers()
         r = self.get(endpoint, headers=headers, params=params)
         r_json = r.json()
-
+        ic(r_json)
         if r.status_code != 200:
             return []
         klines = []
@@ -197,11 +217,11 @@ class KuCoinClient(ExchangeClient):
     def parse_kucoin_account(self, df):
         account = Account(exchange="kucoin")
         for i, row in df.iterrows():
-            symbol = row["Symbol"]
+            symbol = row["Symbol"].replace("-USDT", "").replace("-USDC", "")
             trade = Trade(
                 time=row["Order Time(UTC+01:00)"],
                 type=row["Side"],
-                symbol=row["Symbol"],
+                symbol=symbol,
                 fee=row["Fee"],
                 filled_ammount=row["Filled Amount"],
                 avg_price=row["Avg. Filled Price"],
@@ -271,37 +291,57 @@ class KuCoinClient(ExchangeClient):
         self,
         symbol: str,
         interval: str,
+        expected_klines: int = None,
         start_at: int = None,
         end_at: int = None,
     ) -> List[Kline]:
-        endpoint = "/api/v1/market/candles"
-        headers = self.prepare_headers(endpoint)
-        r_data = self.get(
-            endpoint,
-            headers=headers,
-            params={
-                "symbol": symbol,
-                "type": self.map_interval(interval),
-                "startAt": start_at,
-                "endAt": end_at,
-            },
-        )
-        r_json = r_data.json()
-        ic(r_json)
+        # kucoin retuns at most 1500 klines per request
+        params = {}
+        if expected_klines > 1500:
+            # paginate requests
+            number_of_pages = int(expected_klines // 1500)
+        else:
+            number_of_pages = 1
+
         klines = []
-        if "data" not in r_json.keys():
-            return []
-        for kline in r_json["data"]:
-            klines.append(
-                Kline(
-                    time=kline[0],
-                    open=kline[1],
-                    close=kline[2],
-                    high=kline[3],
-                    low=kline[4],
-                    volume=kline[5],
-                )
+        ic(number_of_pages)
+        ic(expected_klines)
+        for page in range(1, number_of_pages + 1):
+            data = None
+            endpoint = "/api/v1/market/candles"
+            headers = self.prepare_headers(endpoint)
+
+            params["currentPage"] = page
+            params["pageSize"] = 1500
+            params["symbol"] = symbol
+            params["type"] = self.map_interval(interval)
+            params["startAt"] = start_at
+            params["endAt"] = end_at
+
+            r_data = self.get(
+                endpoint,
+                headers=headers,
+                params=params,
             )
+            r_json = r_data.json()
+            if "data" not in r_json.keys():
+                continue
+            data = r_json.pop("data")
+            ic(r_json)
+            ic(len(data))
+
+            for kline in data:
+                klines.append(
+                    Kline(
+                        time=kline[0],
+                        open=kline[1],
+                        close=kline[2],
+                        high=kline[3],
+                        low=kline[4],
+                        volume=kline[5],
+                    )
+                )
+            ic(len(klines)) 
         return klines
 
     def get_trades(self):
