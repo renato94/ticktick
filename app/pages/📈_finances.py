@@ -11,6 +11,13 @@ import plotly.graph_objects as go
 import plotly.express as px
 import trendln
 
+from backtesting import Backtest, Strategy
+from backtesting.lib import crossover
+
+from backtesting.test import SMA, GOOG
+
+
+
 
 def calculate_support_resistance(df):
     sr = []
@@ -286,6 +293,7 @@ def get_wallet_klines(crypto_accounts):
 
 def main():
     st.set_page_config(page_title="money", page_icon="💵", layout="wide")
+    
 
     st.header("Portfolio")
     # st.header("Crypto")
@@ -357,12 +365,13 @@ def main():
 
     total = account_df["balance usd"].sum()
     account_df["percentage"] = (account_df["balance usd"] / total) * 100
-    with st.form("my_form"):
-        symbol_option = st.selectbox("Symbol", symbols_options)
+    with st.form("portfolio_form"):
+        symbol_option = st.selectbox("Symbol", symbols_options, index=5)
         interval = st.selectbox("interval", intervals)
         start_time = st.date_input("start time")
         end_time = st.date_input("end time", max_value=datetime.now())
         submitted = st.form_submit_button("Submit")
+        submitted = True
         if submitted:
             start_date = int(
                 datetime.combine(start_time, datetime.min.time()).timestamp()
@@ -391,6 +400,10 @@ def main():
                 return trades_df
 
             trades_df = aggregate_trades(symbol_trades, "1H")
+            st.metric("Total trades", f"${len(trades_df)}")
+
+            st.metric("portfolio percentage", f"${account_df[account_df['exchange_symbol'] == symbol_name]}")
+            
             # drop all trades where filled_ammout == 0
             trades_df = trades_df[trades_df["filled_ammount"] != 0]
 
@@ -422,16 +435,6 @@ def main():
             ic([datetime.fromtimestamp(pt) for pt in point_x])
             ic(point_y)
 
-            # plot trades on the chart
-
-            # st.write(symbol_trades)
-
-            # plot trades on the chart with scatter plot
-
-            # ic(df)
-            # ss, rr = calculate_support_resistance(df)
-            # ic(ss)
-            # ic(rr)
             fig = go.Figure(
                 data=[
                     go.Candlestick(
@@ -455,45 +458,36 @@ def main():
                 )
             )
 
-            # c = 0
-            # while 1:
-            #     if c > len(ss) - 1:
-            #         fig.add_shape(
-            #             type="line",
-            #             x0=ss[c][0] - 3,
-            #             y0=ss[c][1],
-            #             x1=200,
-            #             y1=ss[c][1],
-            #             line=dict(
-            #                 color="green",
-            #                 width=1,
-            #                 dash="dot",
-            #             ),
-            #         )
-            #     c += 1
-            # c = 0
-            # while 1:
-            #     if c > len(rr) - 1:
-            #         fig.add_shape(
-            #             type="line",
-            #             x0=rr[c][0] - 3,
-            #             y0=rr[c][1],
-            #             x1=200,
-            #             y1=rr[c][1],
-            #             line=dict(
-            #                 color="green",
-            #                 width=1,
-            #                 dash="dot",
-            #             ),
-            #         )
-            #     c += 1
+            class SmaCross(Strategy):
+                n1 = 10
+                n2 = 20
+
+                def init(self):
+                    close = self.data.Close
+                    self.sma1 = self.I(SMA, close, self.n1)
+                    self.sma2 = self.I(SMA, close, self.n2)
+
+                def next(self):
+                    if crossover(self.sma1, self.sma2):
+                        self.buy()
+                    elif crossover(self.sma2, self.sma1):
+                        self.sell()
+
+
+            bt = Backtest(df, SmaCross,
+                        cash=10000, commission=.002,
+                        exclusive_orders=True)
+
+            output = bt.run()
+            bt.plot()
+
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             hist = df["close"].apply(lambda x: float(x))
             indexes = df["time"].values
             ic(type(hist), type(indexes))
-            fig = trendln.plot_sup_res_learn(
+            fig = trendln.plot_support_resistance(
                 hist,  # as per h for calc_support_resistance
-                ,  # x-axis data formatter turning numeric indexes to display output
+                  # x-axis data formatter turning numeric indexes to display output
                 # e.g. ticker.FuncFormatter(func) otherwise just display numeric indexes
                 numbest=2,  # number of best support and best resistance lines to display
                 fromwindows=True,  # draw numbest best from each window, otherwise draw numbest across whole range

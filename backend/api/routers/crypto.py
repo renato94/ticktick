@@ -5,7 +5,7 @@ from typing import List
 from icecream import ic
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from backend.config import DRIVE_CRYPTO_FOLDER, SCOPES, SPREADSHEET_CRYPTO_ID
-from backend.api.exchanges_clients import (
+from backend.api.core.exchanges_clients import (
     GENERAL_KLINE_INTERVALS,
     KuCoinClient,
     MexcClient,
@@ -13,6 +13,7 @@ from backend.api.exchanges_clients import (
 from backend.api.sheets import pull_sheet_data
 import pandas as pd
 from dateutil import parser
+import tempfile
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
@@ -194,14 +195,17 @@ def save_klines_to_drive(drive_service, crypto_folder_id, csv_name, df):
 
 
 def load_klines_from_drive(drive_service, file_id):
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    downloader = MediaIoBaseDownload(fh, request)
-    done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-    fh.seek(0)
-    return pd.read_csv(fh, index_col=0)
+    def load_klines_from_drive(drive_service, file_id):
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = tempfile.NamedTemporaryFile(delete=True)
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        df = pd.read_csv(fh, index_col=0)
+        fh.close()
+        return df
 
 
 def calculate_dates_for_exchange_request(

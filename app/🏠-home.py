@@ -25,7 +25,9 @@ def get_title():
 
 def main():
     st.set_page_config(page_title="Renato", page_icon="🔥", layout="wide")
-
+    with st.sidebar:
+        with st.echo():
+            st.write("This code will be printed to the sidebar.")
     get_title()
     calendar_options = {
         "editable": False,

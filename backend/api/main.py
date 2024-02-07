@@ -4,13 +4,17 @@ from fastapi import Depends, FastAPI, HTTPException
 from icecream import ic
 
 from backend.api import create_access_token, verify_token
-from backend.api.exchanges_clients import KuCoinClient, MexcClient, CryptoRankClient
+from backend.api.core.exchanges_clients import (
+    KuCoinClient,
+    MexcClient,
+    CryptoRankClient,
+)
 from backend.api.sheets import create_drive_folder, get_google_services
-from backend.api.ticktick import TickTickClient, router as ticktick_router
-from backend.api.garmin import router as garmin_router
-from backend.api.github_api import GitHubClient, router as github_router
-from backend.api.crypto import router as crypto_router
-from backend.api.finances import router as finances_router
+from backend.api.routers.ticktick import TickTickClient, router as ticktick_router
+from backend.api.routers.garmin import router as garmin_router
+from backend.api.routers.github_api import GitHubClient, router as github_router
+from backend.api.routers.crypto import router as crypto_router
+from backend.api.routers.finances import router as finances_router
 from backend.config import (
     ALGORITHM,
     GITHUB_ACCESS_TOKEN,
@@ -30,7 +34,7 @@ from backend.config import (
 )
 from pyotp import TOTP
 from uuid import uuid4
-
+from backend.api.database import get_db
 from fastapi.security import OAuth2PasswordBearer
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="otp")
@@ -115,6 +119,7 @@ def startup_event():
     mexc_client = MexcClient(
         api_key=MEXC_API_KEY, api_secret=MEXC_API_SECRET, base_url=MEXC_BASE_URL
     )
+    app.state.db = get_db()
     # asyncio.create_task(github_client.get_repos())
     app.state.tokens = []
     app.state.ticktick_client = ticktick_client

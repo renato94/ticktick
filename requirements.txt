@@ -24,3 +24,6 @@ celery
 redis
 flower
 crontab
+psycopg2
+sqlalchemy
+backtesting
