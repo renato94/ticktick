@@ -1,4 +1,4 @@
-from database import Base
+from backend.api.database import Base
 from sqlalchemy import (
     Column,
     Integer,
@@ -18,7 +18,7 @@ class Goal(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
-    completed = Column(Boolean, default=False)
+    completed = Column(TIMESTAMP)
     created_at = Column(TIMESTAMP, server_default=text("now()"))
     updated_at = Column(TIMESTAMP, server_default=text("now()"), onupdate=text("now()"))
 
@@ -34,7 +34,7 @@ class Step(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
-    completed = Column(Boolean, default=False)
+    completed = Column(TIMESTAMP)
     created_at = Column(TIMESTAMP, server_default=text("now()"))
     updated_at = Column(TIMESTAMP, server_default=text("now()"), onupdate=text("now()"))
 
@@ -50,7 +50,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
-    completed = Column(Boolean, default=False)
+    completed = Column(TIMESTAMP)
     created_at = Column(TIMESTAMP, server_default=text("now()"))
     updated_at = Column(TIMESTAMP, server_default=text("now()"), onupdate=text("now()"))
 

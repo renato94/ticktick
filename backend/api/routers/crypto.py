@@ -4,6 +4,14 @@ import io
 from typing import List
 from icecream import ic
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from backend.api.models.crypto import (
+    Exchange,
+    Interval,
+    Kline,
+    KlinesBase,
+    Symbol,
+    SymbolBase,
+)
 from backend.config import DRIVE_CRYPTO_FOLDER, SCOPES, SPREADSHEET_CRYPTO_ID
 from backend.api.core.exchanges_clients import (
     GENERAL_KLINE_INTERVALS,
@@ -14,6 +22,8 @@ from backend.api.sheets import pull_sheet_data
 import pandas as pd
 from dateutil import parser
 import tempfile
+from backend.celery_t.worker import get_symbol_klines as get_symbol_klines_task
+from backend.api.log import logger
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
@@ -79,16 +89,31 @@ def get_single_crypto(crypto_symbol: str, request: Request):
     return r_crypto_rank
 
 
+def get_db(request: Request):
+    return request.app.state.db
+
+
+def get_exchange_client(request: Request, exchange_name: str):
+    return request.app.state.crypto_clients[exchange_name]
+
+
 @router.get("/all_symbols")
-def get_all_tickers(
-    kucoin_client: KuCoinClient = Depends(get_kucoin_client),
-    mexc_client: MexcClient = Depends(get_mex_client),
-):
-    r_kucoin_symbols = kucoin_client.get_all_symbols()
-    kucoin_symbols = [s["symbol"] for s in r_kucoin_symbols["data"]]
-    r_mex_symbols = mexc_client.get_all_symbols()
-    mexc_symbols = r_mex_symbols["data"]
-    return {"kucoin": kucoin_symbols, "mexc": mexc_symbols}
+def get_all_tickers(request: Request, db=Depends(get_db)):
+    symbols = db.query(Symbol).all()
+    # group exchange symbols and get them from the exchanges
+    unique_exchanges = list(set([s.exchange_id for s in symbols]))
+    exchanges = db.query(Exchange).filter(Exchange.id.in_(unique_exchanges)).all()
+
+    # group symbols by exchange
+    symbols_by_exchange = {}
+    for exchange in exchanges:
+        exchange_client = get_exchange_client(request, exchange.name)
+        symbols_by_exchange[exchange.name] = [
+            exchange_client.build_symbol_pair(s)
+            for s in symbols
+            if s.exchange_id == exchange.id
+        ]
+    return symbols_by_exchange
 
 
 @router.get("/orders")
@@ -161,23 +186,6 @@ def get_drive_service(request: Request):
     return request.app.state.drive_service
 
 
-def calculate_expected_klines(start_date, end_date, interval) -> int:
-    delta = end_date - start_date
-    expected_klines = delta.total_seconds() / 60
-    ic(interval)
-    if interval == GENERAL_KLINE_INTERVALS.ONE_HOUR.value:
-        ek = expected_klines / 60
-    elif interval == GENERAL_KLINE_INTERVALS.FOUR_HOURS.value:
-        ek = expected_klines / 240
-    elif interval == GENERAL_KLINE_INTERVALS.ONE_DAY.value:
-        ek = expected_klines / 1440
-    elif interval == GENERAL_KLINE_INTERVALS.ONE_WEEK.value:
-        ek = expected_klines / 10080
-    else:
-        raise HTTPException(400, "Invalid Interval")
-    return int(ek)
-
-
 def save_klines_to_drive(drive_service, crypto_folder_id, csv_name, df):
     ic(df.columns)
     # save to drive
@@ -195,17 +203,16 @@ def save_klines_to_drive(drive_service, crypto_folder_id, csv_name, df):
 
 
 def load_klines_from_drive(drive_service, file_id):
-    def load_klines_from_drive(drive_service, file_id):
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = tempfile.NamedTemporaryFile(delete=True)
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-        fh.seek(0)
-        df = pd.read_csv(fh, index_col=0)
-        fh.close()
-        return df
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = tempfile.NamedTemporaryFile(delete=True)
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+    fh.seek(0)
+    df = pd.read_csv(fh, index_col=0)
+    fh.close()
+    return df
 
 
 def calculate_dates_for_exchange_request(
@@ -244,19 +251,24 @@ def get_klines_from_exchanges(
     kucoin_client,
     mexc_client,
 ):
-    expected_klines = calculate_expected_klines(
-        datetime.fromtimestamp(start_at), datetime.fromtimestamp(end_at), interval
-    )
     ic(
         "requesting data:",
         datetime.fromtimestamp(start_at),
         datetime.fromtimestamp(end_at),
     )
     if exchange == "kucoin":
+        expected_klines = kucoin_client.calculate_expected_klines(
+            datetime.fromtimestamp(start_at), datetime.fromtimestamp(end_at), interval
+        )
+
         klines = kucoin_client.get_symbol_kline(
             symbol, interval, expected_klines, start_at, end_at
         )
     elif exchange == "mexc":
+        expected_klines = mexc_client.calculate_expected_klines(
+            datetime.fromtimestamp(start_at), datetime.fromtimestamp(end_at), interval
+        )
+
         klines = mexc_client.get_symbol_kline(
             symbol, interval, expected_klines, start_at, end_at
         )
@@ -271,165 +283,63 @@ def delete_drive_file(drive_service, file_id):
 
 @router.get("/klines")
 def get_symbol_klines(
-    request: Request,
     exchange: str,
     symbol: str,
+    base: str,
     interval: str,
     start_at: int = None,
     end_at: int = None,
-    drive_service=Depends(get_drive_service),
-    kucoin_client: KuCoinClient = Depends(get_kucoin_client),
-    mexc_client: MexcClient = Depends(get_mex_client),
-):
-    ic(start_at, end_at)
-    # check if it exists on drive saved klines
-    crypto_folder_id = request.app.state.crypto_folder_id
-    start_date = datetime.fromtimestamp(start_at)
-    end_date = datetime.fromtimestamp(end_at)
+    db=Depends(get_db),
+) -> List[KlinesBase]:
 
-    start_date_str = start_date.strftime("%Y-%m-%d")
-    end_date_str = end_date.strftime("%Y-%m-%d")
-    csv_name = f"{exchange}_{symbol}_{interval}_{start_date_str}_{end_date_str}.csv"
-    csv_name_query = f"{exchange}_{symbol}_{interval}_"
-    drive_query = f"'{crypto_folder_id}' in parents and name contains '{csv_name_query}' and name contains '.csv' and mimeType='text/csv' and trashed = false"
-    ic(drive_query)
-    result_kline_exists = drive_service.files().list(q=drive_query).execute()
-
-    if result_kline_exists.get("files") != []:
-        ic(result_kline_exists.get("files")[0].get("name"))
-        ic(f"{csv_name} exists")
-
-        # get start and end date of the saved csv
-        found_file_name = result_kline_exists.get("files")[0].get("name")
-        found_file_name = found_file_name.replace(".csv", "")
-        found_file_name = found_file_name.replace(csv_name_query, "")
-        file_id = result_kline_exists.get("files")[0].get("id")
-
-        df_current = load_klines_from_drive(drive_service, file_id)
-
-        ic(found_file_name)
-
-        csv_start_date = parser.parse(found_file_name.split("_")[0])
-        csv_end_date = parser.parse(found_file_name.split("_")[1])
-
-        ic(csv_start_date, csv_end_date)
-        ic(start_date, end_date)
-
-        ic(csv_start_date <= start_date and csv_end_date >= end_date)
-        ic(csv_start_date < start_date and csv_end_date < end_date)
-        ic(csv_start_date > start_date and csv_end_date > end_date)
-        ic(csv_start_date > start_date and csv_end_date < end_date)
-
-        if csv_start_date <= start_date and csv_end_date >= end_date:
-            ic("all data in the csv")
-
-            ic("loaded df_current", df_current.columns)
-            # filter the requested dates
-            filtered_df = df_current[
-                (df_current["time"] >= start_at) & (df_current["time"] <= end_at)
-            ]
-            ic("filtered df_current", filtered_df)
-            return filtered_df.to_json()
-        elif csv_start_date < start_date and csv_end_date < end_date:
-            ic("need to request data after")
-            # calculate delta btw existing_end_date and end_date
-            klines = get_klines_from_exchanges(
-                exchange,
-                symbol,
-                interval,
-                end_at,
-                csv_end_date.timestamp(),
-                kucoin_client,
-                mexc_client,
-            )
-            df = pd.DataFrame(klines)
-            # load current csv
-            df_current = load_klines_from_drive(drive_service, file_id)
-            # prepend requested data to current csv
-            df = pd.concat([df, df_current])
-            ic(df.columns)
-            # delete previus drive data
-            new_csv_name = f"{exchange}_{symbol}_{interval}_{csv_start_date.strftime('%Y-%m-%d')}_{end_date_str}.csv"
-            new_file_id = save_klines_to_drive(
-                drive_service, crypto_folder_id, new_csv_name, df
-            )
-            ic(new_file_id)
-            delete_drive_file(drive_service, file_id)
-            return df.to_json()
-        elif csv_start_date < start_date and csv_end_date < end_date:
-            ic("need to request data before")
-            klines = get_klines_from_exchanges(
-                exchange,
-                symbol,
-                interval,
-                start_at,
-                csv_start_date.timestamp(),
-                kucoin_client,
-                mexc_client,
-            )
-            df = pd.DataFrame(klines)
-            ic(df.columns)
-
-            # load current csv
-            ic(len(df_current))
-            ic(len(df))
-            # append requested data to current csv
-            new_df = pd.concat([df, df_current])
-            # delete previus drive data
-            new_csv_name = f"{exchange}_{symbol}_{interval}_{start_date_str}_{csv_end_date.strftime('%Y-%m-%d')}.csv"
-            new_file_id = save_klines_to_drive(
-                drive_service, crypto_folder_id, new_csv_name, new_df
-            )
-            ic(new_file_id)
-            delete_drive_file(drive_service, file_id)
-            ic(new_df.columns)
-            return new_df.to_json()
-
-        elif csv_start_date > start_date and csv_end_date > end_date:
-            ic("need to request data before and after")
-            klines = get_klines_from_exchanges(
-                exchange,
-                symbol,
-                interval,
-                start_at,
-                end_at,
-                kucoin_client,
-                mexc_client,
-            )
-            df = pd.DataFrame(
-                klines,
-                columns=["time", "open", "high", "low", "close"],
-            )
-            new_csv_name = (
-                f"{exchange}_{symbol}_{interval}_{start_date_str}_{end_date_str}.csv"
-            )
-            delete_drive_file(drive_service, file_id)
-            new_file_id = save_klines_to_drive(
-                drive_service, crypto_folder_id, new_csv_name, new_df
-            )
-            ic(new_file_id)
-            return df.to_json()
-    else:
-        ic(f"{csv_name} does not exist")
-
-        klines = get_klines_from_exchanges(
-            exchange,
-            symbol,
-            interval,
-            start_at,
-            end_at,
-            kucoin_client,
-            mexc_client,
+    exchange_db = db.query(Exchange).filter(Exchange.name == exchange).first()
+    logger.info(f"exchange_db: {exchange_db.name}")
+    symbol_db = (
+        db.query(Symbol)
+        .filter(
+            Symbol.exchange_id == exchange_db.id,
+            Symbol.symbol == symbol,
+            Symbol.base_asset == base,
         )
+        .first()
+    )
+    logger.info(f"symbol_db: {symbol_db.symbol}, {symbol_db.base_asset}")
+    interval_db = (
+        db.query(Interval)
+        .filter(Interval.exchange_id == exchange_db.id, Interval.interval == interval)
+        .first()
+    )
+    logger.info(f"interval_db: {interval_db.interval}")
+    klines_filters = [
+        Kline.symbol_id == symbol_db.id,
+        Kline.interval_id == interval_db.id,
+    ]
 
-        if klines:
-            df = pd.DataFrame(klines, columns=["time", "open", "high", "low", "close"])
-            save_klines_to_drive(drive_service, crypto_folder_id, csv_name, df)
-            return df.to_json()
-        else:
-            return pd.DataFrame(
-                columns=["high", "open", "close", "volume", "time"]
-            ).to_json()
+    if start_at:
+        klines_filters.append(Kline.time >= start_at)
+    if end_at:
+        klines_filters.append(Kline.time <= end_at)
+    klines: List[Kline] = db.query(Kline).filter(*klines_filters).all()
+    # klines to dataframe
+    # df = [
+    #         {
+    #             "time": k.time,
+    #             "open": k.open,
+    #             "high": k.high,
+    #             "low": k.low,
+    #             "close": k.close,
+    #             "volume": k.volume,
+    #         }
+    #         for k in klines
+    #     ]
+    return klines
+
+
+@router.get("/klines/all")
+def get_klines(exchange: str, symbol: str, base: str, interval: str):
+    # start celery task to get all klines for a interval and symbol
+    task = get_symbol_klines_task.apply_async(args=[exchange, symbol, base, interval])
+    return {"task_id": task.id, "status": "started"}
 
 
 @router.get("/trades")

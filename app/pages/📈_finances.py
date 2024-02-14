@@ -17,8 +17,6 @@ from backtesting.lib import crossover
 from backtesting.test import SMA, GOOG
 
 
-
-
 def calculate_support_resistance(df):
     sr = []
     n1 = 3
@@ -293,7 +291,6 @@ def get_wallet_klines(crypto_accounts):
 
 def main():
     st.set_page_config(page_title="money", page_icon="💵", layout="wide")
-    
 
     st.header("Portfolio")
     # st.header("Crypto")
@@ -402,8 +399,11 @@ def main():
             trades_df = aggregate_trades(symbol_trades, "1H")
             st.metric("Total trades", f"${len(trades_df)}")
 
-            st.metric("portfolio percentage", f"${account_df[account_df['exchange_symbol'] == symbol_name]}")
-            
+            st.metric(
+                "portfolio percentage",
+                f"${account_df[account_df['exchange_symbol'] == symbol_name]}",
+            )
+
             # drop all trades where filled_ammout == 0
             trades_df = trades_df[trades_df["filled_ammount"] != 0]
 
@@ -458,75 +458,63 @@ def main():
                 )
             )
 
-            class SmaCross(Strategy):
-                n1 = 10
-                n2 = 20
-
-                def init(self):
-                    close = self.data.Close
-                    self.sma1 = self.I(SMA, close, self.n1)
-                    self.sma2 = self.I(SMA, close, self.n2)
-
-                def next(self):
-                    if crossover(self.sma1, self.sma2):
-                        self.buy()
-                    elif crossover(self.sma2, self.sma1):
-                        self.sell()
-
-
-            bt = Backtest(df, SmaCross,
-                        cash=10000, commission=.002,
-                        exclusive_orders=True)
-
-            output = bt.run()
-            bt.plot()
-
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             hist = df["close"].apply(lambda x: float(x))
             indexes = df["time"].values
             ic(type(hist), type(indexes))
+            window = 10
             fig = trendln.plot_support_resistance(
                 hist,  # as per h for calc_support_resistance
-                  # x-axis data formatter turning numeric indexes to display output
+                # x-axis data formatter turning numeric indexes to display output
                 # e.g. ticker.FuncFormatter(func) otherwise just display numeric indexes
                 numbest=2,  # number of best support and best resistance lines to display
                 fromwindows=True,  # draw numbest best from each window, otherwise draw numbest across whole range
                 pctbound=0.1,  # bound trend line based on this maximum percentage of the data range above the high or below the low
                 extmethod=trendln.METHOD_NUMDIFF,
                 method=trendln.METHOD_NSQUREDLOGN,
-                window=125,
+                window=window,
                 errpct=0.005,
                 hough_prob_iter=10,
                 sortError=False,
                 accuracy=20,
             )
-            mins, maxs = trendln.calc_support_resistance((hist[-1000:].Low, hist[-1000:].High))
-            (minimaIdxs, pmin, mintrend, minwindows), (maximaIdxs, pmax, maxtrend, maxwindows) = mins, maxs
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+
+            mins, maxs = trendln.calc_support_resistance(
+               hist,
+               accuracy=20,
+            )
+            (minimaIdxs, pmin, mintrend, minwindows), (
+                maximaIdxs,
+                pmax,
+                maxtrend,
+                maxwindows,
+            ) = (mins, maxs)
             ic(minimaIdxs, pmin, mintrend, minwindows)
             ic(maximaIdxs, pmax, maxtrend, maxwindows)
 
             # plot the minimum and maximum trend lines
-            
-            #st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+
+            # st.plotly_chart(fig, theme="streamlit", use_container_width=True)
             # minimaIdxs - sorted list of indexes to the local minima
             # pmin - [slope, intercept] of average best fit line through all local minima points
             # mintrend - sorted list containing (points, result) for local minima trend lines
-                # points - list of indexes to points in trend line
-                # result - (slope, intercept, SSR, slopeErr, interceptErr, areaAvg)
-                    # slope - slope of best fit trend line
-                    # intercept - y-intercept of best fit trend line
-                    # SSR - sum of squares due to regression
-                    # slopeErr - standard error of slope
-                    # interceptErr - standard error of intercept
-                    # areaAvg - Reimann sum area of difference between best fit trend line
-                    #   and actual data points averaged per time unit
+            # points - list of indexes to points in trend line
+            # result - (slope, intercept, SSR, slopeErr, interceptErr, areaAvg)
+            # slope - slope of best fit trend line
+            # intercept - y-intercept of best fit trend line
+            # SSR - sum of squares due to regression
+            # slopeErr - standard error of slope
+            # interceptErr - standard error of intercept
+            # areaAvg - Reimann sum area of difference between best fit trend line
+            #   and actual data points averaged per time unit
             # minwindows - list of windows each containing mintrend for that window
 
             # maximaIdxs - sorted list of indexes to the local maxima
             # pmax - [slope, intercept] of average best fit line through all local maxima points
             # maxtrend - sorted list containing (points, result) for local maxima trend lines
-                #see for mintrend above
-            
+            # see for mintrend above
+
             # maxwindows - list of windows each containing maxtrend for that window
             # crypto_klines_df = pd.DataFrame(crypto_klines_data)
             # st.dataframe(crypto_klines_df)

@@ -4,25 +4,37 @@ from datetime import datetime
 import hashlib
 import hmac
 import json
+import logging
 import time
 from enum import Enum
 from typing import List
+from fastapi import HTTPException
 
 import httpx
 from abc import ABC, abstractmethod
 from backend.api.crypto_manager.account import Account, Balance, Trade
+from backend.api.models.crypto import Kline, Symbol
 
 from backend.config import CRYPTO_RANK_API_KEY, CRYPTO_RANK_BASE_ENDPOINT
-from icecream import ic
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ExchangeClient(ABC):
     def __init__(
-        self, api_key: str, api_secret: str, base_url: str, passphrase: str = None
+        self,
+        id: int,
+        api_key: str,
+        api_secret: str,
+        base_url: str,
+        passphrase: str = None,
     ):
+        self.id = id
         self.api_key = api_key
         self.api_secret = api_secret
-        self.base_url = base_url
+        self.base_url = str(base_url)
         self.passphrase = passphrase
         self.client = httpx.Client()
 
@@ -32,30 +44,40 @@ class ExchangeClient(ABC):
 
     def get(self, endpoint, headers: dict, params=None):
         return self.client.request(
-            "GET", str(self.base_url) + endpoint, params=params, headers=headers
+            "GET", self.base_url + endpoint, params=params, headers=headers
         )
 
     def post(self, endpoint, headers: dict, params=None, json=None):
         return self.client.request(
             "POST",
-            str(self.base_url) + endpoint,
+            self.base_url + endpoint,
             params=params,
             headers=headers,
             json=json,
         )
 
     def map_interval(self, interval: str):
-        return self.KLINE_INTERVALS.__dict__[interval].value
+        for k in self.KLINE_INTERVALS:
+            if k.value == interval:
+                return k.name
 
-
-@dataclass
-class Kline:
-    time: int
-    open: float
-    close: float
-    high: float
-    low: float
-    volume: float
+    def calculate_expected_klines(self, start_date, end_date, interval) -> int:
+        delta = datetime.fromtimestamp(start_date) - datetime.fromtimestamp(end_date)
+        total_seconds = delta.total_seconds()
+        logger.info(f"total_seconds {total_seconds}")
+        expected_klines = delta.total_seconds() / 60
+        match self.map_interval(interval):
+            case GENERAL_KLINE_INTERVALS.ONE_HOUR.value:
+                ek = expected_klines / 60
+            case GENERAL_KLINE_INTERVALS.FOUR_HOURS.value:
+                ek = expected_klines / 240
+            case GENERAL_KLINE_INTERVALS.ONE_DAY.value:
+                ek = expected_klines / 1440
+            case GENERAL_KLINE_INTERVALS.ONE_WEEK.value:
+                ek = expected_klines / 10080
+            case _:
+                raise HTTPException(400, "Invalid Interval")
+        return int(ek)
 
 
 class GENERAL_KLINE_INTERVALS(Enum):
@@ -124,7 +146,19 @@ class MexcClient(ExchangeClient):
     def get_all_symbols(self):
         headers = self.prepare_headers()
         r = self.get("/api/v3/defaultSymbols", headers=headers)
-        return r.json()
+        r_json = r.json()
+        results = {}
+        for symbol_raw in r_json["data"]:
+            symbol, base_asset = self.parse_mexc_symbol(symbol_raw)
+
+            results[symbol] = base_asset
+        return results
+
+    def parse_mexc_symbol(self, symbol_raw):
+        bases = ["BTC", "ETH", "USDT", "USDC", "USDK", "BNB", "BUSD", "DAI", "TUSD"]
+        for base in bases:
+            if base in symbol_raw:
+                return symbol_raw.strip(base), base
 
     def get_account_summary(self):
         endpoint = "/api/v3/account"
@@ -169,7 +203,7 @@ class MexcClient(ExchangeClient):
         headers = self.prepare_headers()
         r = self.get(endpoint, headers=headers, params=params)
         r_json = r.json()
-        ic(r_json)
+        logger.info(r_json)
         if r.status_code != 200:
             return []
         klines = []
@@ -201,6 +235,9 @@ class MexcClient(ExchangeClient):
         r = self.get(endpoint, headers=headers, params={"symbol": symbol})
         r_json = r.json()
         return r_json
+
+    def build_symbol_pair(self, symbol: Symbol):
+        return f"{symbol.symbol}{symbol.base_asset}"
 
 
 class KuCoinClient(ExchangeClient):
@@ -266,7 +303,14 @@ class KuCoinClient(ExchangeClient):
         headers = self.prepare_headers("/api/v1/symbols")
         r_data = self.get("/api/v2/symbols", headers=headers)
         r_json = r_data.json()
-        return r_json
+        results = {}
+        for symbol in r_json["data"]:
+            results[symbol["baseCurrency"]] = symbol["quoteCurrency"]
+        return results
+
+    def parse_kucoin_symbol(self, symbol_raw):
+        logger.info(symbol_raw)
+        return symbol_raw.split("-")[0], symbol_raw.split("-")[1]
 
     def get_all_orders(self):
         return {}
@@ -291,12 +335,20 @@ class KuCoinClient(ExchangeClient):
         self,
         symbol: str,
         interval: str,
-        expected_klines: int = None,
         start_at: int = None,
         end_at: int = None,
-    ) -> List[Kline]:
+    ) -> List[dict]:
         # kucoin retuns at most 1500 klines per request
         params = {}
+        # calculate the expected number of klines
+        logger.info(f"start_at {datetime.fromtimestamp(start_at)}")
+        logger.info(f"end_at {datetime.fromtimestamp(end_at)}")
+        expected_klines = self.calculate_expected_klines(
+            start_date=start_at,
+            end_date=end_at,
+            interval=interval,
+        )
+        logger.info(f"expected_klines {expected_klines}")
         if expected_klines > 1500:
             # paginate requests
             number_of_pages = int(expected_klines // 1500)
@@ -304,8 +356,8 @@ class KuCoinClient(ExchangeClient):
             number_of_pages = 1
 
         klines = []
-        ic(number_of_pages)
-        ic(expected_klines)
+        logger.info(number_of_pages)
+        logger.info(expected_klines)
         for page in range(1, number_of_pages + 1):
             data = None
             endpoint = "/api/v1/market/candles"
@@ -314,9 +366,9 @@ class KuCoinClient(ExchangeClient):
             params["currentPage"] = page
             params["pageSize"] = 1500
             params["symbol"] = symbol
-            params["type"] = self.map_interval(interval)
-            params["startAt"] = start_at
-            params["endAt"] = end_at
+            params["type"] = interval
+            params["startAt"] = end_at
+            params["endAt"] = start_at
 
             r_data = self.get(
                 endpoint,
@@ -324,24 +376,27 @@ class KuCoinClient(ExchangeClient):
                 params=params,
             )
             r_json = r_data.json()
+            logger.info(f"status code kucoin: {r_data.status_code}")
+            logger.info(f"response code kucoin: {r_json['code']}")
+
             if "data" not in r_json.keys():
                 continue
+
             data = r_json.pop("data")
-            ic(r_json)
-            ic(len(data))
+            logger.info(f"len data: {len(data)}")
 
             for kline in data:
                 klines.append(
-                    Kline(
-                        time=kline[0],
-                        open=kline[1],
-                        close=kline[2],
-                        high=kline[3],
-                        low=kline[4],
-                        volume=kline[5],
-                    )
+                    {
+                        "time": kline[0],
+                        "open": kline[1],
+                        "close": kline[2],
+                        "high": kline[3],
+                        "low": kline[4],
+                        "volume": kline[5],
+                    }
                 )
-            ic(len(klines)) 
+            logger.info(len(klines))
         return klines
 
     def get_trades(self):
@@ -352,6 +407,9 @@ class KuCoinClient(ExchangeClient):
         r = self.get(endpoint, headers=headers, params=params)
         r_json = r.json()
         return r_json
+
+    def build_symbol_pair(self, symbol: Symbol):
+        return f"{symbol.symbol}-{symbol.base_asset}"
 
 
 class CryptoRankClient:

@@ -1,14 +1,18 @@
 import asyncio
+from typing import Dict
 from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException
 from icecream import ic
 
 from backend.api import create_access_token, verify_token
 from backend.api.core.exchanges_clients import (
+    ExchangeClient,
     KuCoinClient,
     MexcClient,
     CryptoRankClient,
 )
+from backend.api.models import crypto
+from backend.api.models.crypto import Exchange
 from backend.api.sheets import create_drive_folder, get_google_services
 from backend.api.routers.ticktick import TickTickClient, router as ticktick_router
 from backend.api.routers.garmin import router as garmin_router
@@ -34,8 +38,9 @@ from backend.config import (
 )
 from pyotp import TOTP
 from uuid import uuid4
-from backend.api.database import get_db
+from backend.api.database import create_database, get_db
 from fastapi.security import OAuth2PasswordBearer
+from backend.api.log import logger
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="otp")
 
@@ -60,7 +65,7 @@ def create_drive_main_folders(
         .execute()
     )
     if result_base_folder.get("files") == []:  # Create base folder
-        ic("creating base folder")
+        logger.info("creating base folder")
         base_folder_id = create_drive_folder(drive_service, DRIVE_BASE_FOLDER)
     else:
         base_folder_id = result_base_folder.get("files")[0].get("id")
@@ -97,6 +102,12 @@ def create_drive_main_folders(
 
 @app.on_event("startup")
 def startup_event():
+    logger.debug("debug message")
+    logger.info("info message")
+    logger.warning("warning message")
+    logger.error("error message")
+    logger.critical("critical message")
+
     drive_service, sheets_service = get_google_services(SCOPES)
 
     crypto_folder_id, garmin_folder_id = create_drive_main_folders(
@@ -109,23 +120,122 @@ def startup_event():
     github_client = GitHubClient(GITHUB_ACCESS_TOKEN)
     ticktick_client = TickTickClient()
     crypto_rank_client = CryptoRankClient()
-    kucoin_client = KuCoinClient(
-        api_key=KUCOIN_API_KEY,
-        api_secret=KUCOIN_API_SECRET,
-        passphrase=KUCOIN_API_PASSPHRASE,
-        base_url=KUCOIN_API_BASE_URL,
-    )
 
-    mexc_client = MexcClient(
-        api_key=MEXC_API_KEY, api_secret=MEXC_API_SECRET, base_url=MEXC_BASE_URL
-    )
-    app.state.db = get_db()
+    db = get_db()
+    from backend.api.models import goals
+
+    create_database()
+
+    def get_or_add_exchanges(db):
+
+        kucoin_exchange = db.query(Exchange).filter(Exchange.name == "KuCoin").first()
+        exchanges = []
+        if not kucoin_exchange:
+            kucoin_exchange = Exchange(
+                name="KuCoin",
+                api_key=KUCOIN_API_KEY,
+                secret_key=KUCOIN_API_SECRET,
+                passphrase=KUCOIN_API_PASSPHRASE,
+                base_url=KUCOIN_API_BASE_URL,
+            )
+            db.add(kucoin_exchange)
+            db.commit()
+
+            add_kucoin_exchange_interval(db, kucoin_exchange.id)
+            exchanges.append(kucoin_exchange)
+        mexc_exchange = db.query(Exchange).filter(Exchange.name == "MEXC").first()
+        if not mexc_exchange:
+            mexc_exchange = Exchange(
+                name="MEXC",
+                api_key=MEXC_API_KEY,
+                secret_key=MEXC_API_SECRET,
+                base_url=MEXC_BASE_URL,
+            )
+            db.add(mexc_exchange)
+            db.commit()
+            add_mexc_echange_interval(db, mexc_exchange.id)
+            exchanges.append(mexc_exchange)
+            return exchanges
+        else:
+            return db.query(Exchange).all()
+
+    def add_kucoin_exchange_interval(db, exchange_id):
+        ONE_MINUTE = "1min"
+        FIVE_MINUTES = "5min"
+        FIFTHEEN_MINUTES = "15min"
+        THIRTHY_MINUTEs = "30min"
+        ONE_HOUR = "1hour"
+        FOUR_HOURS = "4hour"
+        ONE_DAY = "1day"
+        ONE_WEEK = "1week"
+
+        intervals = [
+            ONE_MINUTE,
+            FIVE_MINUTES,
+            FIFTHEEN_MINUTES,
+            THIRTHY_MINUTEs,
+            ONE_HOUR,
+            FOUR_HOURS,
+            ONE_DAY,
+            ONE_WEEK,
+        ]
+
+        for interval in intervals:
+            db.add(crypto.Interval(exchange_id=exchange_id, interval=interval))
+        db.commit()
+
+    def add_mexc_echange_interval(db, exchange_id):
+        ONE_MINUTE = "1m"
+        FIVE_MINUTES = "5m"
+        FIFTHEEN_MINUTES = "15m"
+        THIRTHY_MINUTEs = "30m"
+        ONE_HOUR = "60m"
+        FOUR_HOURS = "4h"
+        ONE_DAY = "1d"
+        ONE_WEEK = "1W"
+        ONE_MONTH = "1M"
+
+        intervals = [
+            ONE_MINUTE,
+            FIVE_MINUTES,
+            FIFTHEEN_MINUTES,
+            THIRTHY_MINUTEs,
+            ONE_HOUR,
+            FOUR_HOURS,
+            ONE_DAY,
+            ONE_WEEK,
+            ONE_MONTH,
+        ]
+
+        for interval in intervals:
+            db.add(crypto.Interval(exchange_id=exchange_id, interval=interval))
+        db.commit()
+
+    exchanges = get_or_add_exchanges(db)
+    kucoin_exchange = exchanges[0]
+    mexc_exchange = exchanges[1]
+    logger.info(exchanges)
+    app.state.db = db
+
     # asyncio.create_task(github_client.get_repos())
     app.state.tokens = []
+    app.state.crypto_clients: Dict[str, ExchangeClient] = {}
     app.state.ticktick_client = ticktick_client
     app.state.crypto_rank_client = crypto_rank_client
-    app.state.kucoin_client = kucoin_client
-    app.state.mexc_client = mexc_client
+    app.state.crypto_clients[kucoin_exchange.name] = KuCoinClient(
+        id=kucoin_exchange.id,
+        api_key=kucoin_exchange.api_key,
+        api_secret=kucoin_exchange.secret_key,
+        passphrase=kucoin_exchange.passphrase,
+        base_url=kucoin_exchange.base_url,
+    )
+
+    app.state.crypto_clients[mexc_exchange.name] = MexcClient(
+        id=mexc_exchange.id,
+        api_key=mexc_exchange.api_key,
+        api_secret=mexc_exchange.secret_key,
+        base_url=mexc_exchange.base_url,
+    )
     app.state.github_client = github_client
     app.state.totp = TOTP(OPT_KEY)
 
