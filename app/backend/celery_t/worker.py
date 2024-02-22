@@ -9,7 +9,7 @@ from backend.config import GITHUB_ACCESS_TOKEN, SQLALCHEMY_DATABASE_URL
 import httpx
 from celery.signals import worker_process_init, worker_process_shutdown
 from backend.api import database
-from backend.api.models.crypto import Exchange, Symbol, Interval, Kline
+from backend.api.models.crypto import Exchange, Pair, Symbol, Interval, Kline
 import logging
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,7 @@ def get_symbol_klines(exchange: str, symbol: str, base: str, interval: str):
             passphrase=exchange.passphrase,
             base_url=exchange.base_url,
         )
+
         symbol_db: Symbol = (
             db.query(Symbol)
             .filter(Symbol.symbol == symbol, Symbol.base_asset == base)
@@ -174,6 +175,7 @@ def get_exchanges_symbols():
     kucoin_exchange = db.query(Exchange).filter(Exchange.name == "KuCoin").first()
     kucoin_client = KuCoinClient(
         id=kucoin_exchange.id,
+        name=kucoin_exchange.name,
         api_key=kucoin_exchange.api_key,
         api_secret=kucoin_exchange.secret_key,
         passphrase=kucoin_exchange.passphrase,
@@ -181,15 +183,26 @@ def get_exchanges_symbols():
     )
     kucoin_symbols = kucoin_client.get_all_symbols()
 
-    for symbol, base in kucoin_symbols.items():
+    for symbol, pair in kucoin_symbols.items():
+        # check if pair exists in the database
+        pair_db = (
+            db.query(Pair)
+            .filter(Pair.exchange_id == kucoin_exchange.id, Pair.name == pair)
+            .first()
+        )
+        if not pair_db:
+            # pair does not exist, add it
+            pair_db = Pair(exchange_id=kucoin_exchange.id, name=pair)
+            db.add(pair_db)
+            db.commit()
         if (
             not db.query(Symbol)
-            .filter(Symbol.symbol == symbol, Symbol.base_asset == base)
+            .filter(Symbol.name == symbol, Symbol.pair_id == pair_db.id)
             .first()
         ):
             news_symbols += 1
             db.add(
-                Symbol(exchange_id=kucoin_exchange.id, symbol=symbol, base_asset=base)
+                Symbol(exchange_id=kucoin_exchange.id, name=symbol, pair_id=pair_db.id)
             )
     db.commit()
     logger.info(f"{kucoin_exchange.name} news_symbols: {news_symbols}")
@@ -197,20 +210,33 @@ def get_exchanges_symbols():
     mexc_exchange = db.query(Exchange).filter(Exchange.name == "MEXC").first()
     mexc_client = MexcClient(
         mexc_exchange.id,
+        mexc_exchange.name,
         mexc_exchange.api_key,
         mexc_exchange.secret_key,
         mexc_exchange.base_url,
     )
     logger.info(mexc_client)
     mexc_symbols = mexc_client.get_all_symbols()
-    for symbol, base in mexc_symbols.items():
+    for symbol, pair in mexc_symbols.items():
+        pair_db = (
+            db.query(Pair)
+            .filter(Pair.exchange_id == mexc_exchange.id, Pair.name == pair)
+            .first()
+        )
+        if not pair_db:
+            # pair does not exist, add it
+            pair_db = Pair(exchange_id=mexc_exchange.id, name=pair)
+            db.add(pair_db)
+            db.commit()
         if (
             not db.query(Symbol)
-            .filter(Symbol.symbol == symbol, Symbol.base_asset == base)
+            .filter(Symbol.name == symbol, Symbol.pair_id == pair_db.id)
             .first()
         ):
             news_symbols += 1
-            db.add(Symbol(exchange_id=mexc_exchange.id, symbol=symbol, base_asset=base))
+            db.add(
+                Symbol(exchange_id=mexc_exchange.id, name=symbol, pair_id=pair_db.id)
+            )
     db.commit()
     logger.info(f"{mexc_exchange.name} news_symbols: {news_symbols}")
     db.close()

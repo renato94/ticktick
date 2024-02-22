@@ -1,3 +1,4 @@
+from typing import List
 from pydantic import BaseModel
 from backend.api.database import Base
 from sqlalchemy import (
@@ -11,15 +12,6 @@ from sqlalchemy import (
     ForeignKey,
 )
 from sqlalchemy.orm import relationship
-
-
-# finance related models
-class Account(Base):
-    __tablename__ = "accounts"
-
-    id = Column(Integer, primary_key=True, index=True)
-    exchange_id = Column(Integer, nullable=False)
-    is_active = Column(Boolean, default=True)
 
 
 class Order(Base):
@@ -60,7 +52,18 @@ class Interval(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     exchange_id = Column(Integer, nullable=False)
-    interval = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+
+
+class SymbolPair(BaseModel):
+    symbol: str
+    pairs: List[str]
+
+
+class ExchangeSymbols(BaseModel):
+    exchange: str
+    symbols: List[SymbolPair]
+    intervals: List[str]
 
 
 class IntervalBase(BaseModel):
@@ -74,13 +77,29 @@ class Symbol(Base):
     __tablename__ = "symbols"
     id = Column(Integer, primary_key=True, index=True)
     exchange_id = Column(Integer, nullable=False)
-    symbol = Column(String, nullable=False)
-    base_asset = Column(String, nullable=False)
+    name = Column(String, nullable=False)  # BTC or ETH
+    pair_id = Column(Integer, nullable=False)
+
+
+class Pair(Base):
+    __tablename__ = "pairs"
+    id = Column(Integer, primary_key=True, index=True)
+    exchange_id = Column(Integer, nullable=False)
+    name = Column(String, nullable=False)  # USDT or USD
+
+
+class Balance(Base):
+    __tablename__ = "balances"
+    id = Column(Integer, primary_key=True, index=True)
+    exchange_id = Column(Integer, nullable=False)
+    symbol_id = Column(String, nullable=False)
+    free = Column(Double, nullable=False)
+    locked = Column(Double, nullable=False)
 
 
 class SymbolBase(BaseModel):
-    symbol: str
-    base_asset: str
+    name: str
+    pair_name: str
 
     class Config:
         orm_mode = True
@@ -92,7 +111,7 @@ class Kline(Base):
     id = Column(Integer, primary_key=True, nullable=False)
     symbol_id = Column(Integer, nullable=False)
     interval_id = Column(Integer, nullable=False)
-    time = Column(String, nullable=False)
+    time = Column(Integer, nullable=False)
     open = Column(Double, nullable=False)
     high = Column(Double, nullable=False)
     low = Column(Double, nullable=False)
@@ -107,7 +126,7 @@ class Kline(Base):
 
 
 class KlinesBase(BaseModel):
-    time: str
+    time: int
     open: float
     high: float
     low: float

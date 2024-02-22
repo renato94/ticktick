@@ -181,7 +181,7 @@ def startup_event():
         ]
 
         for interval in intervals:
-            db.add(crypto.Interval(exchange_id=exchange_id, interval=interval))
+            db.add(crypto.Interval(exchange_id=exchange_id, name=interval))
         db.commit()
 
     def add_mexc_echange_interval(db, exchange_id):
@@ -208,22 +208,25 @@ def startup_event():
         ]
 
         for interval in intervals:
-            db.add(crypto.Interval(exchange_id=exchange_id, interval=interval))
+            db.add(crypto.Interval(exchange_id=exchange_id, name=interval))
         db.commit()
 
     exchanges = get_or_add_exchanges(db)
     kucoin_exchange = exchanges[0]
     mexc_exchange = exchanges[1]
+    #add_kucoin_exchange_interval(db, kucoin_exchange.id)
+    #add_mexc_echange_interval(db, mexc_exchange.id)
     logger.info(exchanges)
     app.state.db = db
 
     # asyncio.create_task(github_client.get_repos())
     app.state.tokens = []
-    app.state.crypto_clients: Dict[str, ExchangeClient] = {}
+    app.state.crypto_clients: Dict[str, ExchangeClient] = dict()
     app.state.ticktick_client = ticktick_client
     app.state.crypto_rank_client = crypto_rank_client
     app.state.crypto_clients[kucoin_exchange.name] = KuCoinClient(
         id=kucoin_exchange.id,
+        name=kucoin_exchange.name,
         api_key=kucoin_exchange.api_key,
         api_secret=kucoin_exchange.secret_key,
         passphrase=kucoin_exchange.passphrase,
@@ -232,6 +235,7 @@ def startup_event():
 
     app.state.crypto_clients[mexc_exchange.name] = MexcClient(
         id=mexc_exchange.id,
+        name=mexc_exchange.name,
         api_key=mexc_exchange.api_key,
         api_secret=mexc_exchange.secret_key,
         base_url=mexc_exchange.base_url,

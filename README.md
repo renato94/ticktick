@@ -1,7 +1,7 @@
 # ticktick
 
 ## Start Server (FastAPI)
-
+cd app
 uvicorn backend.api.main:app --port 9090 --reload
 
 ## Start TaskRunner (Celery)

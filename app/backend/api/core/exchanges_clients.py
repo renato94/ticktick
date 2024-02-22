@@ -26,12 +26,14 @@ class ExchangeClient(ABC):
     def __init__(
         self,
         id: int,
+        name: str,
         api_key: str,
         api_secret: str,
         base_url: str,
         passphrase: str = None,
     ):
         self.id = id
+        self.name = name
         self.api_key = api_key
         self.api_secret = api_secret
         self.base_url = str(base_url)
@@ -40,6 +42,10 @@ class ExchangeClient(ABC):
 
     @abstractmethod
     def prepare_headers(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def parse_symbol_exchange(self, *args, **kwargs):
         pass
 
     def get(self, endpoint, headers: dict, params=None):
@@ -104,8 +110,8 @@ class MexcClient(ExchangeClient):
         ONE_WEEK = "1W"
         ONE_MONTH = "1M"
 
-    def parse_mexc_account(self, df):
-        account = Account(exchange="mexc")
+    def parse_account(self, df):
+        account = Account(exchange=self.name)
         for i, row in df.iterrows():
             symbol = row["Crypto"].replace("USDT", "")
             if row["Transaction Type"] == "Spot Trading":
@@ -149,12 +155,12 @@ class MexcClient(ExchangeClient):
         r_json = r.json()
         results = {}
         for symbol_raw in r_json["data"]:
-            symbol, base_asset = self.parse_mexc_symbol(symbol_raw)
+            symbol, base_asset = self.parse_symbol_exchange(symbol_raw)
 
             results[symbol] = base_asset
         return results
 
-    def parse_mexc_symbol(self, symbol_raw):
+    def parse_symbol_exchange(self, symbol_raw):
         bases = ["BTC", "ETH", "USDT", "USDC", "USDK", "BNB", "BUSD", "DAI", "TUSD"]
         for base in bases:
             if base in symbol_raw:
@@ -251,8 +257,8 @@ class KuCoinClient(ExchangeClient):
         ONE_DAY = "1day"
         ONE_WEEK = "1week"
 
-    def parse_kucoin_account(self, df):
-        account = Account(exchange="kucoin")
+    def parse_account(self, df):
+        account = Account(exchange=self.name)
         for i, row in df.iterrows():
             symbol = row["Symbol"].replace("-USDT", "").replace("-USDC", "")
             trade = Trade(
@@ -299,10 +305,14 @@ class KuCoinClient(ExchangeClient):
 
         return headers
 
+    def parse_symbol_exchange(self, symbol_raw: str):
+        return symbol_raw.split("-")[0], symbol_raw.split("-")[1]
+
     def get_all_symbols(self):
         headers = self.prepare_headers("/api/v1/symbols")
         r_data = self.get("/api/v2/symbols", headers=headers)
         r_json = r_data.json()
+        logger.info(r_json)
         results = {}
         for symbol in r_json["data"]:
             results[symbol["baseCurrency"]] = symbol["quoteCurrency"]
@@ -310,7 +320,6 @@ class KuCoinClient(ExchangeClient):
 
     def parse_kucoin_symbol(self, symbol_raw):
         logger.info(symbol_raw)
-        return symbol_raw.split("-")[0], symbol_raw.split("-")[1]
 
     def get_all_orders(self):
         return {}

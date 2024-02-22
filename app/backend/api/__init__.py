@@ -4,6 +4,7 @@ from backend.config import ALGORITHM, SECRET_KEY
 from fastapi import Request
 from icecream import ic
 
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = data.copy()
     if expires_delta:

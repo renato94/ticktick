@@ -1,16 +1,20 @@
 from datetime import datetime
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
-from typing import List
+from typing import Dict, List
 from icecream import ic
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel
 from backend.api.models.crypto import (
     Exchange,
+    ExchangeSymbols,
     Interval,
     Kline,
     KlinesBase,
+    Pair,
     Symbol,
     SymbolBase,
+    SymbolPair,
 )
 from backend.config import DRIVE_CRYPTO_FOLDER, SCOPES, SPREADSHEET_CRYPTO_ID
 from backend.api.core.exchanges_clients import (
@@ -36,11 +40,11 @@ def calculate_average_entry(initial_investment, num_tokens):
 
 
 def get_kucoin_client(request: Request):
-    return request.app.state.kucoin_client
+    return request.app.state.crypto_clients["KuCoin"]
 
 
 def get_mex_client(request: Request):
-    return request.app.state.mexc_client
+    return request.app.state.crypto_clients["MEXC"]
 
 
 @router.get("/all")
@@ -97,23 +101,44 @@ def get_exchange_client(request: Request, exchange_name: str):
     return request.app.state.crypto_clients[exchange_name]
 
 
-@router.get("/all_symbols")
+@router.get("/all_symbols", response_model=List[ExchangeSymbols])
 def get_all_tickers(request: Request, db=Depends(get_db)):
-    symbols = db.query(Symbol).all()
     # group exchange symbols and get them from the exchanges
-    unique_exchanges = list(set([s.exchange_id for s in symbols]))
-    exchanges = db.query(Exchange).filter(Exchange.id.in_(unique_exchanges)).all()
-
+    exchanges = db.query(Exchange).all()
+    response = []
     # group symbols by exchange
     symbols_by_exchange = {}
     for exchange in exchanges:
+        pairs_db = db.query(Pair).filter(Pair.exchange_id == exchange.id).all()
+        pairs_ids = [pair.id for pair in pairs_db]
+        pairs_dict = {p.id: p for p in pairs_db}
+        symbols = (
+            db.query(Symbol)
+            .filter(Symbol.exchange_id == exchange.id, Symbol.pair_id.in_(pairs_ids))
+            .all()
+        )
+        logger.info(f"symbols: {symbols[0]}")
+        intervals: List[Interval] = (
+            db.query(Interval).filter(Interval.exchange_id == exchange.id).all()
+        )
         exchange_client = get_exchange_client(request, exchange.name)
-        symbols_by_exchange[exchange.name] = [
-            exchange_client.build_symbol_pair(s)
-            for s in symbols
-            if s.exchange_id == exchange.id
-        ]
-    return symbols_by_exchange
+
+        s_be = {}
+        for s in symbols:
+            if s.name not in s_be.keys():
+                s_be[s.name] = []
+            s_be[s.name].append(pairs_dict[s.pair_id].name)
+        symbols_by_exchange = [SymbolPair(symbol=s, pairs=s_be[s]) for s in s_be.keys()]
+
+        intervals = [it.name for it in intervals]
+
+        response.append(
+            ExchangeSymbols(
+                exchange=exchange.name, symbols=symbols_by_exchange, intervals=intervals
+            )
+        )
+
+    return response
 
 
 @router.get("/orders")
@@ -157,10 +182,11 @@ def get_account(
     mexc_summary = {}
     for currency_data in r_mexc_account["balances"]:
         currency_name = currency_data["asset"]
-        if not round(float(currency_data["free"]), 1) < 1:
+        currency_balance = float(currency_data["free"]) + float(currency_data["locked"])
+        if not round(currency_balance, 1) < 1:
             if currency_name not in mexc_summary.keys():
                 mexc_summary[currency_name] = {
-                    "balance": currency_data["free"],
+                    "balance": currency_balance,
                     "account_Type": r_mexc_account["accountType"],
                 }
 
@@ -177,8 +203,8 @@ def get_account(
             ]["price"]
     # ic(r_currencies_price_mexc)
     return {
-        "kucoin": kucoin_summary,
-        "mexc": mexc_summary,
+        kucoin_client.name: kucoin_summary,
+        mexc_client.name: mexc_summary,
     }
 
 
@@ -242,84 +268,69 @@ def calculate_dates_for_exchange_request(
         return None, None
 
 
-def get_klines_from_exchanges(
-    exchange,
-    symbol,
-    interval,
-    start_at,
-    end_at,
-    kucoin_client,
-    mexc_client,
-):
-    ic(
-        "requesting data:",
-        datetime.fromtimestamp(start_at),
-        datetime.fromtimestamp(end_at),
-    )
-    if exchange == "kucoin":
-        expected_klines = kucoin_client.calculate_expected_klines(
-            datetime.fromtimestamp(start_at), datetime.fromtimestamp(end_at), interval
-        )
-
-        klines = kucoin_client.get_symbol_kline(
-            symbol, interval, expected_klines, start_at, end_at
-        )
-    elif exchange == "mexc":
-        expected_klines = mexc_client.calculate_expected_klines(
-            datetime.fromtimestamp(start_at), datetime.fromtimestamp(end_at), interval
-        )
-
-        klines = mexc_client.get_symbol_kline(
-            symbol, interval, expected_klines, start_at, end_at
-        )
-    else:
-        raise HTTPException(400, "Invalid Exchange")
-    return klines
-
-
 def delete_drive_file(drive_service, file_id):
     drive_service.files().delete(fileId=file_id).execute()
 
 
 @router.get("/klines")
 def get_symbol_klines(
+    request: Request,
     exchange: str,
     symbol: str,
-    base: str,
+    pair: str,
     interval: str,
     start_at: int = None,
     end_at: int = None,
     db=Depends(get_db),
 ) -> List[KlinesBase]:
-
     exchange_db = db.query(Exchange).filter(Exchange.name == exchange).first()
+    crypto_exchange_client: KuCoinClient | MexcClient = (
+        request.app.state.crypto_clients[exchange_db.name]
+    )
     logger.info(f"exchange_db: {exchange_db.name}")
+    pair_db = (
+        db.query(Pair)
+        .filter(Pair.exchange_id == exchange_db.id, Pair.name == pair)
+        .first()
+    )
+
     symbol_db = (
         db.query(Symbol)
         .filter(
             Symbol.exchange_id == exchange_db.id,
-            Symbol.symbol == symbol,
-            Symbol.base_asset == base,
+            Symbol.name == symbol,
+            Symbol.pair_id == pair_db.id,
         )
         .first()
     )
-    logger.info(f"symbol_db: {symbol_db.symbol}, {symbol_db.base_asset}")
+    # check if symbol and pair exists
+    if not symbol_db:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+
     interval_db = (
         db.query(Interval)
-        .filter(Interval.exchange_id == exchange_db.id, Interval.interval == interval)
+        .filter(Interval.exchange_id == exchange_db.id, Interval.name == interval)
         .first()
     )
-    logger.info(f"interval_db: {interval_db.interval}")
+    # check if valid interval
+    if not interval_db:
+        raise HTTPException(status_code=404, detail="Interval not found")
+
     klines_filters = [
         Kline.symbol_id == symbol_db.id,
         Kline.interval_id == interval_db.id,
     ]
 
     if start_at:
-        klines_filters.append(Kline.time >= start_at)
+        klines_filters.append(Kline.time >= str(start_at))
     if end_at:
-        klines_filters.append(Kline.time <= end_at)
+        klines_filters.append(Kline.time <= str(end_at))
     klines: List[Kline] = db.query(Kline).filter(*klines_filters).all()
+    if klines:
+        return klines
+    else:
+        # trigger a celery task to get the klines
+        
     # klines to dataframe
     # df = [
     #         {
@@ -348,10 +359,9 @@ def get_trades(
     kucoin_client: KuCoinClient = Depends(get_kucoin_client),
     mexc_client: MexcClient = Depends(get_mex_client),
 ):
-    exchanges = ["kucoin", "mexc"]
     dfs = []
     accounts = {}
-    for e in exchanges:
+    for e in [kucoin_client.name, mexc_client.name]:
         result = (
             drive_service.files()
             .list(
@@ -370,10 +380,10 @@ def get_trades(
             status, done = downloader.next_chunk()
         fh.seek(0)
         df = pd.read_csv(fh)
-        if e == "kucoin":
-            account = kucoin_client.parse_kucoin_account(df)
-        elif e == "mexc":
-            account = mexc_client.parse_mexc_account(df)
+        if e == "KuCoin":
+            account = kucoin_client.parse_account(df)
+        elif e == "MEXC":
+            account = mexc_client.parse_account(df)
         accounts[e] = account
         dfs.append(df)
     return accounts
